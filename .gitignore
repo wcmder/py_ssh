@@ -43,4 +43,6 @@ override.tf.json
 bin/
 include/
 lib/
+outputs/
+*.json
 

@@ -1,14 +1,4 @@
 
-# Device file format: 
-{
-  "router": [
-    { "hostname": "router1", "ip": "192.168.1.1" },
-    { "hostname": "router2", "ip": "192.168.1.2" }
-  ]
-}
-
-
-
 import paramiko
 import json
 import os
@@ -17,13 +7,28 @@ import getpass
 import time
 import re
 
+TARGET = "disa"
+
 # === Commands to Run ===
 COMMANDS = [
-    'show version',
-    'show running-config',
-    'show ip interface brief',
-    'show inventory',
-    'show interfaces status'
+    "show run",
+    "show inventory",
+    "show version",
+    "show arp",
+    "show vrf",
+    "show ip interface brief",
+    "show interfaces description",
+    "show ip access-lists",
+    "show cdp neigh",
+    "show cdp neigh detail",
+    "show cdp interface",
+    "show ip route summary",
+    "show ip route",
+    "show ip bgp",
+    "show ip bgp neigh",
+    "show ip ospf neigh",
+    "show int trunk",
+    "show module",
 ]
 
 # === Input JSON File ===
@@ -41,28 +46,42 @@ def load_devices(file_path):
     try:
         with open(file_path) as f:
             data = json.load(f)
-            return data.get('router', [])  # <- Correct key here
+            return data.get(TARGET, [])  # <- Correct key here
     except json.JSONDecodeError as e:
         print(f"[ERROR] Invalid JSON in {file_path}: {e}")
-        return []
+        exit(0)
     except FileNotFoundError:
         print(f"[ERROR] File not found: {file_path}")
-        return []
+        exit(0)
+        
 
-def read_until_prompt(shell, prompt_regex=r'[>#]\s*$', timeout=30):
+def read_until_prompt(shell, prompt_regex=r'[>#]\s*$', timeout=60):
     buffer = ''
-    end_time = time.time() + timeout
-    while time.time() < end_time:
+    last_data_time = time.time()
+
+    while True:
         if shell.recv_ready():
             chunk = shell.recv(65535).decode(errors='ignore')
             buffer += chunk
-            if re.search(prompt_regex, buffer.splitlines()[-1]):
-                break
+            last_data_time = time.time()
         else:
             time.sleep(0.2)
+
+        # if no new data for a while, check if we're done
+        if time.time() - last_data_time > 2:
+            lines = buffer.strip().splitlines()
+            if lines and re.search(prompt_regex, lines[-1]):
+                break
+
+        # hard timeout
+        if time.time() - last_data_time > timeout:
+            print("[WARN] Prompt not detected, breaking read loop.")
+            break
+
     return buffer
 
-def ssh_and_run(ip, username, password, commands):
+
+def ssh_and_run(ip, username, password, commands, hostname):
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -77,9 +96,10 @@ def ssh_and_run(ip, username, password, commands):
 
         output = ""
         for cmd in commands:
+            output += f"\n################################################ {cmd}\n"
             shell.send(cmd + "\n")
             cmd_output = read_until_prompt(shell)
-            output += f"\n################################################ {cmd}\n{cmd_output}"
+            output += cmd_output
 
         client.close()
         return output + "\n\n\n\n\n"
@@ -87,12 +107,7 @@ def ssh_and_run(ip, username, password, commands):
     except Exception as e:
         error_msg = f"[ERROR] Failed to connect to {hostname} ({ip}): {e}"
         print(error_msg)
-        return f"\n######## ERROR\n{error_msg}\n"
-
-    except Exception as e:
-        error_msg = f"[ERROR] Failed to connect to {hostname} ({ip}): {e}"
-        print(error_msg)
-        return f"\n######## ERROR\n{error_msg}\n"
+        return None
 
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -107,13 +122,16 @@ def main():
         hostname = device['hostname']
         ip = device['ip']
         print(f"Connecting to {hostname} ({ip})...")
-        result = ssh_and_run(ip, USERNAME, PASSWORD, COMMANDS)
+        result = ssh_and_run(ip, USERNAME, PASSWORD, COMMANDS, hostname)
 
-        filename = f"{hostname}_{timestamp}.txt"
-        filepath = os.path.join(OUTPUT_DIR, filename)
-        with open(filepath, 'w') as f:
-            f.write(result)
-        print(f"Saved output to {filepath}")
+        if result is not None:
+            filename = f"{hostname}_{timestamp}.txt"
+            filepath = os.path.join(OUTPUT_DIR, filename)
+            with open(filepath, 'w') as f:
+                f.write(result)
+            print(f"Saved output to {filepath}\n")
+        else:
+            print(f"Skipping {hostname} due to SSH failure\n")
 
 if __name__ == "__main__":
     main()

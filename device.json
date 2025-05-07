@@ -1,6 +1,13 @@
 {
   "router": [
     { "hostname": "router1", "ip": "192.168.1.138" }
+  ],
+  
+  "disa": [
+    { "hostname": "c4451-pentagon-1", "ip": "10.98.1.1" },
+    { "hostname": "c4451-pentagon-sm-1", "ip": "10.98.1.2" },
+    { "hostname": "c4451-fs-mtr-u1-1", "ip": "10.100.16.15" },
+    { "hostname": "c4451-fs-mtr-u1-2", "ip": "10.100.16.16" }
   ]
 }
 
