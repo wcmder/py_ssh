@@ -22,7 +22,7 @@ import getpass
 import time
 import re
 
-TARGET = "disa"
+TARGET = ["disa"]
 
 # === Commands to Run ===
 COMMANDS = [
@@ -57,18 +57,41 @@ DEVICE_FILE = os.path.join(SCRIPT_DIR, 'device.json')
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'outputs')
 
 
-def load_devices(file_path):
+def load_devices(file_path, categories=None):
+    """
+    Load devices from specific categories in a JSON file.
+    :param file_path: Path to the JSON file
+    :param categories: List of category keys to load, or None to load all
+    :return: List of device dicts
+    """
     try:
         with open(file_path) as f:
             data = json.load(f)
-            return data.get(TARGET, [])  # <- Correct key here
+
+        all_devices = []
+
+        if categories is None:
+            # Load everything
+            for group in data.values():
+                if isinstance(group, list):
+                    all_devices.extend(group)
+        else:
+            # Load only specified categories
+            for cat in categories:
+                group = data.get(cat)
+                if isinstance(group, list):
+                    all_devices.extend(group)
+                else:
+                    print(f"[WARN] Category '{cat}' not found or invalid in JSON.")
+
+        return all_devices
+
     except json.JSONDecodeError as e:
         print(f"[ERROR] Invalid JSON in {file_path}: {e}")
-        exit(0)
+        return []
     except FileNotFoundError:
         print(f"[ERROR] File not found: {file_path}")
-        exit(0)
-        
+        return []
 
 def read_until_prompt(shell, prompt_regex=r'[>#]\s*$', timeout=60):
     buffer = ''
@@ -126,7 +149,7 @@ def ssh_and_run(ip, username, password, commands, hostname):
 
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    devices = load_devices(DEVICE_FILE)
+    devices = load_devices(DEVICE_FILE, categories=TARGET)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     #print(devices)
     USERNAME = input("Enter SSH username: ")
