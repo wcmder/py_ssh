@@ -1,3 +1,18 @@
+# NOTE device.json format -
+
+{
+    "router": [
+      { "hostname": "router1", "ip": "192.168.1.138" }
+    ],
+
+  "disa": [
+      { "hostname": "r1", "ip": "10.98.1.1" },
+      { "hostname": "r2", "ip": "10.98.1.2" },
+      { "hostname": "r3", "ip": "10.100.16.15" },
+      { "hostname": "r4", "ip": "10.100.16.16" }
+  ]
+}
+
 
 import paramiko
 import json
@@ -113,7 +128,7 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     devices = load_devices(DEVICE_FILE)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    print(devices)
+    #print(devices)
     USERNAME = input("Enter SSH username: ")
     PASSWORD = getpass.getpass("Enter SSH password: ")
 
