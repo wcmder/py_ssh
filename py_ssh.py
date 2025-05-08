@@ -21,8 +21,10 @@ from datetime import datetime
 import getpass
 import time
 import re
+import concurrent.futures
 
 TARGET = ["disa"]
+THREAD = 2
 
 # === Commands to Run ===
 COMMANDS = [
@@ -149,6 +151,7 @@ def ssh_and_run(ip, username, password, commands, hostname):
 
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    max_threads = THREAD
     devices = load_devices(DEVICE_FILE, categories=TARGET)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     #print(devices)
@@ -156,7 +159,7 @@ def main():
     PASSWORD = getpass.getpass("Enter SSH password: ")
 
 
-    for device in devices:
+    def process_device(device):
         hostname = device['hostname']
         ip = device['ip']
         print(f"Connecting to {hostname} ({ip})...")
@@ -170,6 +173,9 @@ def main():
             print(f"Saved output to {filepath}\n")
         else:
             print(f"Skipping {hostname} due to SSH failure\n")
+            
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+        executor.map(process_device, devices)
 
 if __name__ == "__main__":
     main()
