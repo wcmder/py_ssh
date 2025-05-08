@@ -162,7 +162,7 @@ def main():
     def process_device(device):
         hostname = device['hostname']
         ip = device['ip']
-        print(f"Connecting to {hostname} ({ip})...")
+        print(f"Connecting to {hostname} ({ip})...\n")
         result = ssh_and_run(ip, USERNAME, PASSWORD, COMMANDS, hostname)
 
         if result is not None:
