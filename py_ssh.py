@@ -5,12 +5,12 @@
       { "hostname": "router1", "ip": "192.168.1.138" }
     ],
 
-  "disa": [
+    "disa": [
       { "hostname": "r1", "ip": "10.98.1.1" },
       { "hostname": "r2", "ip": "10.98.1.2" },
       { "hostname": "r3", "ip": "10.100.16.15" },
       { "hostname": "r4", "ip": "10.100.16.16" }
-  ]
+    ]
 }
 
 
@@ -23,8 +23,8 @@ import time
 import re
 import concurrent.futures
 
-TARGET = ["disa"]
-THREAD = 2
+TARGET = ["btn"]
+THREAD = 25
 
 # === Commands to Run ===
 COMMANDS = [
@@ -90,12 +90,12 @@ def load_devices(file_path, categories=None):
 
     except json.JSONDecodeError as e:
         print(f"[ERROR] Invalid JSON in {file_path}: {e}")
-        return []
+        exit(0)
     except FileNotFoundError:
         print(f"[ERROR] File not found: {file_path}")
-        return []
+        exit(0)
 
-def read_until_prompt(shell, prompt_regex=r'[>#]\s*$', timeout=60):
+def read_until_prompt(shell, hostname, prompt_regex=r'[>#]\s*$', timeout=60):
     buffer = ''
     last_data_time = time.time()
 
@@ -115,7 +115,7 @@ def read_until_prompt(shell, prompt_regex=r'[>#]\s*$', timeout=60):
 
         # hard timeout
         if time.time() - last_data_time > timeout:
-            print("[WARN] Prompt not detected, breaking read loop.")
+            print("[WARN] Prompt not detected, breaking read loop - "+hostname)
             break
 
     return buffer
@@ -132,20 +132,20 @@ def ssh_and_run(ip, username, password, commands, hostname):
         shell.recv(1000)  # clear welcome message
 
         shell.send("terminal length 0\n")
-        read_until_prompt(shell)  # clear its output
+        read_until_prompt(shell, hostname)  # clear its output
 
         output = ""
         for cmd in commands:
             output += f"\n################################################ {cmd}\n"
             shell.send(cmd + "\n")
-            cmd_output = read_until_prompt(shell)
+            cmd_output = read_until_prompt(shell, hostname)
             output += cmd_output
 
         client.close()
         return output + "\n\n\n\n\n"
 
     except Exception as e:
-        error_msg = f"[ERROR] Failed to connect to {hostname} ({ip}): {e}"
+        error_msg = f"[ERROR] Failed to connect to {hostname} ({ip}): {e}\n"
         print(error_msg)
         return None
 
@@ -157,25 +157,30 @@ def main():
     #print(devices)
     USERNAME = input("Enter SSH username: ")
     PASSWORD = getpass.getpass("Enter SSH password: ")
-
+    ssh_fail = []
 
     def process_device(device):
         hostname = device['hostname']
         ip = device['ip']
-        print(f"Connecting to {hostname} ({ip})...\n")
+        print(f"Connecting to {hostname} ({ip})\...\n")
         result = ssh_and_run(ip, USERNAME, PASSWORD, COMMANDS, hostname)
 
         if result is not None:
-            filename = f"{hostname}_{timestamp}.txt"
+            filename = f"{hostname}-{ip}_{timestamp}.txt"
             filepath = os.path.join(OUTPUT_DIR, filename)
             with open(filepath, 'w') as f:
                 f.write(result)
-            print(f"Saved output to {filepath}\n")
+            print(f"Saved {hostname} output to {filepath}\n")
         else:
-            print(f"Skipping {hostname} due to SSH failure\n")
+            #print(f"Skipping {hostname} due to SSH failure\n")
+            ssh_fail.append('{"hostname": "'+hostname+'", "ip": "'+ip+'"},')
             
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
         executor.map(process_device, devices)
+    
+    print("\n\n\nFAILED SSH LIST:\n")
+    for e in ssh_fail:
+        print(f'{e}')
 
 if __name__ == "__main__":
     main()
