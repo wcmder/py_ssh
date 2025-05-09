@@ -23,7 +23,7 @@ import time
 import re
 import concurrent.futures
 
-TARGET = ["btn"]
+TARGET = ["test"]
 THREAD = 25
 
 # === Commands to Run ===
@@ -162,7 +162,7 @@ def main():
     def process_device(device):
         hostname = device['hostname']
         ip = device['ip']
-        print(f"Connecting to {hostname} ({ip})\...\n")
+        print(f"Connecting to {hostname} ({ip})...\n")
         result = ssh_and_run(ip, USERNAME, PASSWORD, COMMANDS, hostname)
 
         if result is not None:
@@ -178,9 +178,10 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
         executor.map(process_device, devices)
     
-    print("\n\n\nFAILED SSH LIST:\n")
-    for e in ssh_fail:
-        print(f'{e}')
+    if len(ssh_fail) > 0:
+        print("\n\n\nFAILED SSH LIST:\n")
+        for e in ssh_fail:
+            print(f'{e}')
 
 if __name__ == "__main__":
     main()
