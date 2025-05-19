@@ -23,7 +23,7 @@ import time
 import re
 import concurrent.futures
 
-TARGET = ["test"]
+TARGET = ["btn_failed2"]
 THREAD = 25
 
 # === Commands to Run ===
@@ -125,7 +125,14 @@ def ssh_and_run(ip, username, password, commands, hostname):
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(ip, username=username, password=password, timeout=10)
+        client.connect(
+            ip, 
+            username=username, 
+            password=password, 
+            timeout=10,
+            banner_timeout=80,
+            auth_timeout=120
+        )
 
         shell = client.invoke_shell()
         time.sleep(1)
