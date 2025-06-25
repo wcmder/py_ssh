@@ -13,6 +13,9 @@
     ]
 }
 
+# Mac kerying cred 
+# creat: python3 -c 'import keyring; keyring.set_password("py_ssh", "wder1", "xxxxxxxxxxx")'
+# delete python3 -c 'import keyring; keyring.delete_password("py_ssh", "wder1")
 
 import paramiko
 import json
@@ -24,6 +27,7 @@ import re
 import concurrent.futures
 import argparse
 import shutil
+import keyring
 
 TARGET = ["campus"]
 THREAD = 10
@@ -180,13 +184,24 @@ def ssh_and_run(ip, username, password, commands, hostname):
 def main(a=None):
     if a:
         archive()
+        print("Archived all TXT files\n\n")
+    
+    # check credential
+    USERNAME = 'wder1'
+    PASSWORD = keyring.get_password("py_ssh", "wder1")
+    #print(keyring.get_password("py_ssh", "wder1"))
+    
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     max_threads = THREAD
     devices = load_devices(DEVICE_FILE, categories=TARGET)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     #print(devices)
-    USERNAME = input("Enter SSH username: ")
-    PASSWORD = getpass.getpass("Enter SSH password: ")
+    #USERNAME = input("Enter SSH username: ")
+    #PASSWORD = getpass.getpass("Enter SSH password: ")
+    print(f'Username: {USERNAME}')
+    print('Password from Kerying')
+    
+    
     ssh_fail = []
 
     def process_device(device):
