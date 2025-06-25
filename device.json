@@ -437,7 +437,7 @@
     {"hostname": "EDGE_c9400_fs_trb_10_1", "ip": "10.100.50.52"},
     {"hostname": "EDGE_c9400_fs_trb_11_1", "ip": "10.100.50.54"},
     {"hostname": "EDGE_c9400_fs_trb_12_1", "ip": "10.100.50.57"},
-    {"hostname": "EDGE_c9400_fs_trb_13_1", "ip": "10.100.50.59"}
+    {"hostname": "EDGE_c9400_fs_trb_13_1", "ip": "10.10.50.59"}
   ]
 }
 

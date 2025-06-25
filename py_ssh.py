@@ -147,6 +147,7 @@ def read_until_prompt(shell, hostname, prompt_regex=r'[>#]\s*$', timeout=60):
 
 
 def ssh_and_run(ip, username, password, commands, hostname):
+    error = []
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -179,6 +180,7 @@ def ssh_and_run(ip, username, password, commands, hostname):
     except Exception as e:
         error_msg = f"[ERROR] Failed to connect to {hostname} ({ip}): {e}\n"
         print(error_msg)
+        error.append(error_msg)
         return None
 
 def main(a=None):
@@ -195,11 +197,15 @@ def main(a=None):
     max_threads = THREAD
     devices = load_devices(DEVICE_FILE, categories=TARGET)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    errorfile = f"error_{timestamp}.log"
+    errorfilepath = os.path.join(OUTPUT_DIR, errorfile)
+    
     #print(devices)
     #USERNAME = input("Enter SSH username: ")
     #PASSWORD = getpass.getpass("Enter SSH password: ")
     print(f'Username: {USERNAME}')
-    print('Password from Kerying')
+    print('Password from Kerying\n')
     
     
     ssh_fail = []
@@ -228,6 +234,10 @@ def main(a=None):
         print("\n\n\nFAILED SSH LIST:\n")
         for e in ssh_fail:
             print(f'{e}')
+        
+        with open(errorfilepath, 'w') as ef:
+            for line in ssh_fail:
+                ef.write(line)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
