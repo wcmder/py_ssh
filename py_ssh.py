@@ -22,11 +22,14 @@ import getpass
 import time
 import re
 import concurrent.futures
+import argparse
+import shutil
 
-TARGET = ["btn_failed2"]
-THREAD = 25
+TARGET = ["campus"]
+THREAD = 10
 
 # === Commands to Run ===
+"""
 COMMANDS = [
     "show run",
     "show inventory",
@@ -47,6 +50,11 @@ COMMANDS = [
     "show int trunk",
     "show module",
 ]
+"""
+
+COMMANDS = [
+    "show run"
+]
 
 # === Input JSON File ===
 # Get directory of the current script
@@ -58,6 +66,19 @@ DEVICE_FILE = os.path.join(SCRIPT_DIR, 'device.json')
 # Output directory relative to the script
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'outputs')
 
+# Archive directory relative to the script
+ARCHIVE_DIR = os.path.join(SCRIPT_DIR, 'outputs', 'archive')
+
+def archive():
+    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    
+    for filename in os.listdir(OUTPUT_DIR):
+        fullpath = os.path.join(OUTPUT_DIR, filename)
+        if filename.endswith(".txt") and os.path.isfile(fullpath):
+            shutil.move(os.path.join(OUTPUT_DIR, filename), os.path.join(ARCHIVE_DIR, filename))
+            print(f"Moved: {filename} -> {ARCHIVE_DIR}")
+        else:
+            print(f"Not moved: {filename}")
 
 def load_devices(file_path, categories=None):
     """
@@ -156,7 +177,9 @@ def ssh_and_run(ip, username, password, commands, hostname):
         print(error_msg)
         return None
 
-def main():
+def main(a=None):
+    if a:
+        archive()
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     max_threads = THREAD
     devices = load_devices(DEVICE_FILE, categories=TARGET)
@@ -173,7 +196,8 @@ def main():
         result = ssh_and_run(ip, USERNAME, PASSWORD, COMMANDS, hostname)
 
         if result is not None:
-            filename = f"{hostname}-{ip}_{timestamp}.txt"
+            saft_hostname = hostname.replace("-", "_")
+            filename = f"{saft_hostname}-{ip}_{timestamp}.txt"
             filepath = os.path.join(OUTPUT_DIR, filename)
             with open(filepath, 'w') as f:
                 f.write(result)
@@ -191,4 +215,7 @@ def main():
             print(f'{e}')
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-a", action="store_true")
+    args = parser.parse_args()
+    main(a=args.a)

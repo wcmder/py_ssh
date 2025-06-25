@@ -406,6 +406,38 @@
     {"hostname": "daf_nv_btn_01", "ip": "10.101.97.112"},
     {"hostname": "ngccc_oh_btn_01", "ip": "10.101.97.240"},
     {"hostname": "epirus01_ca_btn_01", "ip": "10.101.97.240"}
+  ],
+  
+  "campus": [
+    {"hostname": "EDGE_c9300_fs_mtr_r11_1", "ip": "10.100.50.56"},
+    {"hostname": "EDGE_c9300_fs_tra_02_1", "ip": "10.100.50.41"},
+    {"hostname": "EDGE_c9300_fs_tra_04_1", "ip": "10.100.50.35"},
+    {"hostname": "EDGE_c9300_fs_tra_05_1", "ip": "10.100.50.43"},
+    {"hostname": "EDGE_c9300_fs_tra_06_1", "ip": "10.100.50.45"},
+    {"hostname": "EDGE_c9300_fs_tra_07_1", "ip": "10.100.50.46"},
+    {"hostname": "c9300-fs-tra-08-5", "ip": "10.100.51.6"},
+    {"hostname": "c9300-fs_10-400", "ip": "10.100.50.49"},
+    {"hostname": "EDGE_c9300_fs_tra_09_1", "ip": "10.100.50.51"},
+    {"hostname": "EDGE_c9300_fs_tra_10_1", "ip": "10.100.50.53"},
+    {"hostname": "EDGE_c9300_fs_tra_11_1", "ip": "10.100.50.55"},
+    {"hostname": "EDGE_c9300_fs_tra_12_1", "ip": "10.100.50.58"},
+    {"hostname": "EDGE_c9300_fs_tra_13_1", "ip": "10.100.50.62"},
+    {"hostname": "EDGE_c9300_fs_trb_01_1", "ip": "10.100.50.38"},
+    {"hostname": "EDGE_c9300_fs_trb_02_1", "ip": "10.100.50.39"},
+    {"hostname": "EDGE_c9300_TEST", "ip": "10.100.50.37"},
+    {"hostname": "EDGE_c9300-fs-HD-04-8", "ip": "10.100.50.252"},
+    {"hostname": "EDGE_c9400_fs_trb_03_1", "ip": "10.100.50.40"},
+    {"hostname": "EDGE_c9400_fs_trb_04_1", "ip": "10.100.50.36"},
+    {"hostname": "EDGE_c9400_fs_trb_05_1", "ip": "10.100.50.42"},
+    {"hostname": "EDGE_c9400_fs_trb_06_1", "ip": "10.100.50.44"},
+    {"hostname": "EDGE_c9400_fs_trb_07_1", "ip": "10.100.50.47"},
+    {"hostname": "EDGE_c9300_fs_trb_08_4", "ip": "10.100.51.7"},
+    {"hostname": "EDGE_c9400_fs_trb_08_1", "ip": "10.100.50.48"},
+    {"hostname": "EDGE_c9400_fs_trb_09_1", "ip": "10.100.50.50"},
+    {"hostname": "EDGE_c9400_fs_trb_10_1", "ip": "10.100.50.52"},
+    {"hostname": "EDGE_c9400_fs_trb_11_1", "ip": "10.100.50.54"},
+    {"hostname": "EDGE_c9400_fs_trb_12_1", "ip": "10.100.50.57"},
+    {"hostname": "EDGE_c9400_fs_trb_13_1", "ip": "10.100.50.59"}
   ]
 }
 
