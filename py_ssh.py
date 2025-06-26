@@ -238,6 +238,8 @@ def main(a=None):
         with open(errorfilepath, 'w') as ef:
             for line in ssh_fail:
                 ef.write(line)
+    else:
+        print("ALL DONE, NO ERROR")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
