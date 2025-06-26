@@ -259,4 +259,4 @@ if __name__ == "__main__":
     parser.add_argument("-l", action="store_true", help="Enable loop mode (run once between 8-9 PM, then repeat)")
     args = parser.parse_args()
 
-    main(a=args.a, loop=args.l)
+    main(a=args.a, l=args.l)
