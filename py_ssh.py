@@ -241,14 +241,16 @@ def main(a=None, l=False):
 
         while True:
             now = datetime.now()
-            print(f"[{now}] Checking if it's between 8–9 PM...")
+            print(f"[{now}] Checking if it's between 8-9 PM")
 
             if now.hour == 20 and not has_run_today:
+                print("Kicks off...")
                 run_all()
                 has_run_today = True
             elif now.hour >= 21:
                 has_run_today = False  # Reset after 9 PM
 
+            print("In the loop...")
             time.sleep(57 * 60)
     else:
         run_all()
