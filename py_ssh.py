@@ -183,66 +183,80 @@ def ssh_and_run(ip, username, password, commands, hostname):
         error.append(error_msg)
         return None
 
-def main(a=None):
-    if a:
-        archive()
-        print("Archived all TXT files\n\n")
-    
-    # check credential
-    USERNAME = 'wder1'
-    PASSWORD = keyring.get_password("py_ssh", "wder1")
-    #print(keyring.get_password("py_ssh", "wder1"))
-    
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    max_threads = THREAD
-    devices = load_devices(DEVICE_FILE, categories=TARGET)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    
-    errorfile = f"error_{timestamp}.log"
-    errorfilepath = os.path.join(OUTPUT_DIR, errorfile)
-    
-    #print(devices)
-    #USERNAME = input("Enter SSH username: ")
-    #PASSWORD = getpass.getpass("Enter SSH password: ")
-    print(f'Username: {USERNAME}')
-    print('Password from Kerying\n')
-    
-    
-    ssh_fail = []
+def main(a=None, l=False):
+    def run_all():
+        if a:
+            archive()
+            print("Archived all TXT files\n\n")
 
-    def process_device(device):
-        hostname = device['hostname']
-        ip = device['ip']
-        print(f"Connecting to {hostname} ({ip})...\n")
-        result = ssh_and_run(ip, USERNAME, PASSWORD, COMMANDS, hostname)
+        # check credential
+        USERNAME = 'wder1'
+        PASSWORD = keyring.get_password("py_ssh", "wder1")
 
-        if result is not None:
-            saft_hostname = hostname.replace("-", "_")
-            filename = f"{saft_hostname}-{ip}_{timestamp}.txt"
-            filepath = os.path.join(OUTPUT_DIR, filename)
-            with open(filepath, 'w') as f:
-                f.write(result)
-            print(f"Saved {hostname} output to {filepath}\n")
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        max_threads = THREAD
+        devices = load_devices(DEVICE_FILE, categories=TARGET)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        errorfile = f"error_{timestamp}.log"
+        errorfilepath = os.path.join(OUTPUT_DIR, errorfile)
+
+        print(f'Username: {USERNAME}')
+        print('Password from Keyring\n')
+
+        ssh_fail = []
+
+        def process_device(device):
+            hostname = device['hostname']
+            ip = device['ip']
+            print(f"Connecting to {hostname} ({ip})...\n")
+            result = ssh_and_run(ip, USERNAME, PASSWORD, COMMANDS, hostname)
+
+            if result is not None:
+                safe_hostname = hostname.replace("-", "_")
+                filename = f"{safe_hostname}-{ip}_{timestamp}.txt"
+                filepath = os.path.join(OUTPUT_DIR, filename)
+                with open(filepath, 'w') as f:
+                    f.write(result)
+                print(f"Saved {hostname} output to {filepath}\n")
+            else:
+                ssh_fail.append('{"hostname": "'+hostname+'", "ip": "'+ip+'"},')
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+            executor.map(process_device, devices)
+
+        if len(ssh_fail) > 0:
+            print("\n\n\nFAILED SSH LIST:\n")
+            for e in ssh_fail:
+                print(f'{e}')
+
+            with open(errorfilepath, 'w') as ef:
+                for line in ssh_fail:
+                    ef.write(line)
         else:
-            #print(f"Skipping {hostname} due to SSH failure\n")
-            ssh_fail.append('{"hostname": "'+hostname+'", "ip": "'+ip+'"},')
-            
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-        executor.map(process_device, devices)
-    
-    if len(ssh_fail) > 0:
-        print("\n\n\nFAILED SSH LIST:\n")
-        for e in ssh_fail:
-            print(f'{e}')
-        
-        with open(errorfilepath, 'w') as ef:
-            for line in ssh_fail:
-                ef.write(line)
+            print("ALL DONE, NO ERROR")
+
+    if l:
+        has_run_today = False
+
+        while True:
+            now = datetime.now()
+            print(f"[{now}] Checking if it's between 8–9 PM...")
+
+            if now.hour == 20 and not has_run_today:
+                run_all()
+                has_run_today = True
+            elif now.hour >= 21:
+                has_run_today = False  # Reset after 9 PM
+
+            time.sleep(57 * 60)
     else:
-        print("ALL DONE, NO ERROR")
+        run_all()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-a", action="store_true")
+    parser.add_argument("-a", action="store_true", help="Archive all .txt files before starting")
+    parser.add_argument("-l", action="store_true", help="Enable loop mode (run once between 8-9 PM, then repeat)")
     args = parser.parse_args()
-    main(a=args.a)
+
+    main(a=args.a, loop=args.l)
