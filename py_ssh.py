@@ -159,7 +159,7 @@ def ssh_and_run(ip, username, password, commands, hostname):
             banner_timeout=80,
             auth_timeout=120
         )
-
+        print(f"Connected to {hostname} ({ip})!!!\n")
         shell = client.invoke_shell()
         time.sleep(1)
         shell.recv(1000)  # clear welcome message
