@@ -1,250 +1,483 @@
-#
-# Mac kerying cred 
-# creat: python3 -c 'import keyring; keyring.set_password("py_ssh", "wder1", "xxxxxxxxxxx")'
-# delete python3 -c 'import keyring; keyring.delete_password("py_ssh", "wder1")
 
-import paramiko
+#!/usr/bin/env python3
+"""
+py_ssh.py
+- Importable API: run_batch(commands, devices, output_dir, ...)
+- CLI mode with args (archive, loop, commands/devices/output paths)
+- Keyring-aware auth if password is not provided
+- Group-aware device JSON (dict of lists), with --device-groups filtering
+"""
+
+from __future__ import annotations
+import argparse
+import concurrent.futures
 import json
 import os
-from datetime import datetime
-import getpass
-import time
-import re
-import concurrent.futures
-import argparse
 import shutil
-import keyring
+import socket
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Union
+import paramiko
+from threading import Lock
 
-TARGET = ["mpls-new"]
-THREAD = 10
+try:
+    import keyring  # type: ignore
+except Exception:  # pragma: no cover
+    keyring = None
 
-# === Commands to Run ===
-"""
-COMMANDS = [
-    "show run",
-    "show inventory",
-    "show version",
-    "show arp",
-    "show vrf",
-    "show ip interface brief",
-    "show interfaces description",
-    "show ip access-lists",
-    "show cdp neigh",
-    "show cdp neigh detail",
-    "show cdp interface",
-    "show ip route summary",
-    "show ip route",
-    "show ip bgp",
-    "show ip bgp neigh",
-    "show ip ospf neigh",
-    "show int trunk",
-    "show module",
-]
-"""
+print_lock = Lock()
 
 COMMANDS = [
     "show run"
 ]
 
-# === Input JSON File ===
-# Get directory of the current script
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_DEVICES_FILE = Path(__file__).with_name("device.json")
 
-# Build full path to the devices.json file
-DEVICE_FILE = os.path.join(SCRIPT_DIR, 'device.json')
+TARGET = ["mpls-new"]  # default groups to use when none provided
 
-# Output directory relative to the script
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'outputs')
+DEFAULT_SERVICE = "py_ssh"
+DEFAULT_PORT = 22
 
-# Archive directory relative to the script
-ARCHIVE_DIR = os.path.join(SCRIPT_DIR, 'outputs', 'archive')
+# ---------------------------- Helpers ---------------------------- #
 
-def archive():
-    os.makedirs(ARCHIVE_DIR, exist_ok=True)
-    
-    for filename in os.listdir(OUTPUT_DIR):
-        fullpath = os.path.join(OUTPUT_DIR, filename)
-        if filename.endswith(".txt") and os.path.isfile(fullpath):
-            shutil.move(os.path.join(OUTPUT_DIR, filename), os.path.join(ARCHIVE_DIR, filename))
-            print(f"Moved: {filename} -> {ARCHIVE_DIR}")
-        else:
-            print(f"Not moved: {filename}")
+def _ensure_dir(p: Path) -> None:
+    p.mkdir(parents=True, exist_ok=True)
 
-def load_devices(file_path, categories=None):
-    """
-    Load devices from specific categories in a JSON file.
-    :param file_path: Path to the JSON file
-    :param categories: List of category keys to load, or None to load all
-    :return: List of device dicts
-    """
+
+def _timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def _write_text(fp: Path, content: str) -> None:
+    _ensure_dir(fp.parent)
+    fp.write_text(content, encoding="utf-8")
+
+
+def _archive_current_txt(output_dir: Path, archive_dir: Path) -> None:
+    """Move existing *.txt files from output_dir to archive_dir/<ts>/"""
+    if not output_dir.exists():
+        return
+    ts_dir = archive_dir / f"archive_{_timestamp()}"
+    _ensure_dir(ts_dir)
+    for txt in output_dir.glob("*.txt"):
+        shutil.move(str(txt), ts_dir / txt.name)
+
+
+def _get_password_from_keyring(service: str, username: str) -> Optional[str]:
+    if keyring is None:
+        return None
     try:
-        with open(file_path) as f:
-            data = json.load(f)
-
-        all_devices = []
-
-        if categories is None:
-            # Load everything
-            for group in data.values():
-                if isinstance(group, list):
-                    all_devices.extend(group)
-        else:
-            # Load only specified categories
-            for cat in categories:
-                group = data.get(cat)
-                if isinstance(group, list):
-                    all_devices.extend(group)
-                else:
-                    print(f"[WARN] Category '{cat}' not found or invalid in JSON.")
-
-        return all_devices
-
-    except json.JSONDecodeError as e:
-        print(f"[ERROR] Invalid JSON in {file_path}: {e}")
-        exit(0)
-    except FileNotFoundError:
-        print(f"[ERROR] File not found: {file_path}")
-        exit(0)
-
-def read_until_prompt(shell, hostname, prompt_regex=r'[>#]\s*$', timeout=60):
-    buffer = ''
-    last_data_time = time.time()
-
-    while True:
-        if shell.recv_ready():
-            chunk = shell.recv(65535).decode(errors='ignore')
-            buffer += chunk
-            last_data_time = time.time()
-        else:
-            time.sleep(0.2)
-
-        # if no new data for a while, check if we're done
-        if time.time() - last_data_time > 2:
-            lines = buffer.strip().splitlines()
-            if lines and re.search(prompt_regex, lines[-1]):
-                break
-
-        # hard timeout
-        if time.time() - last_data_time > timeout:
-            print("[WARN] Prompt not detected, breaking read loop - "+hostname)
-            break
-
-    return buffer
-
-
-def ssh_and_run(ip, username, password, commands, hostname):
-    error = []
-    try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(
-            ip, 
-            username=username, 
-            password=password, 
-            timeout=10,
-            banner_timeout=80,
-            auth_timeout=120
-        )
-        print(f"Connected to {hostname} ({ip})!!!\n")
-        shell = client.invoke_shell()
-        time.sleep(1)
-        shell.recv(1000)  # clear welcome message
-
-        shell.send("terminal length 0\n")
-        read_until_prompt(shell, hostname)  # clear its output
-
-        output = ""
-        for cmd in commands:
-            output += f"\n################################################ {cmd}\n"
-            shell.send(cmd + "\n")
-            cmd_output = read_until_prompt(shell, hostname)
-            output += cmd_output
-
-        client.close()
-        return output + "\n\n\n\n\n"
-
-    except Exception as e:
-        error_msg = f"[ERROR] Failed to connect to {hostname} ({ip}): {e}\n"
-        print(error_msg)
-        error.append(error_msg)
+        return keyring.get_password(service, username)
+    except Exception:
         return None
 
-def main(a=None, l=False):
-    def run_all():
-        if a:
-            archive()
-            print("Archived all TXT files\n\n")
 
-        # check credential
-        USERNAME = 'wder1'
-        PASSWORD = keyring.get_password("py_ssh", "wder1")
+def _resolve_auth(device: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Resolve auth inputs:
+      1) password in device
+      2) keyring(service=device['keyring_service'] or DEFAULT_SERVICE, username=device['username'])
+      3) key_filename
+      4) ssh agent / default keys
+    """
+    username = device.get("username") or device.get("user")
+    password = device.get("password")
+    key_filename = device.get("key_filename")
+    service = device.get("keyring_service", DEFAULT_SERVICE)
 
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        max_threads = THREAD
-        devices = load_devices(DEVICE_FILE, categories=TARGET)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    if not password and username:
+        kr_pw = _get_password_from_keyring(service, username)
+        if kr_pw:
+            password = kr_pw
 
-        errorfile = f"error_{timestamp}.log"
-        errorfilepath = os.path.join(OUTPUT_DIR, errorfile)
+    return {"username": username, "password": password, "key_filename": key_filename}
 
-        print(f'Username: {USERNAME}')
-        print('Password from Keyring\n')
 
-        ssh_fail = []
+# ---------------------------- SSH core ---------------------------- #
 
-        def process_device(device):
-            hostname = device['hostname']
-            ip = device['ip']
-            print(f"Connecting to {hostname} ({ip})...\n")
-            result = ssh_and_run(ip, USERNAME, PASSWORD, COMMANDS, hostname)
+class SSHResult:
+    def __init__(self, host: str, ok: bool, output: str = "", error: str = "", outfile: Optional[Path] = None):
+        self.host = host            # display label in results
+        self.ok = ok
+        self.output = output
+        self.error = error
+        self.outfile = outfile
 
-            if result is not None:
-                safe_hostname = hostname.replace("-", "_")
-                filename = f"{safe_hostname}-{ip}_{timestamp}.txt"
-                filepath = os.path.join(OUTPUT_DIR, filename)
-                with open(filepath, 'w') as f:
-                    f.write(result)
-                print(f"Saved {hostname} output to {filepath}\n")
-            else:
-                ssh_fail.append('{"hostname": "'+hostname+'", "ip": "'+ip+'"},')
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "host": self.host,
+            "ok": self.ok,
+            "output": self.output,
+            "error": self.error,
+            "outfile": str(self.outfile) if self.outfile else None,
+        }
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-            executor.map(process_device, devices)
 
-        if len(ssh_fail) > 0:
-            print("\n\n\nFAILED SSH LIST:\n")
-            for e in ssh_fail:
-                print(f'{e}')
+def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
+    timeout: int = 20,
+    cmd_delay: float = 0.2,
+    banner_timeout: int = 15,
+) -> SSHResult:
+    host_for_connect = device.get("connect_host") or device.get("ip") or device.get("host") or device.get("hostname")
+    if not host_for_connect:
+        return SSHResult(host=device.get("display_name") or str(device), ok=False, error="Missing host/ip/hostname")
 
-            with open(errorfilepath, 'w') as ef:
-                for line in ssh_fail:
-                    ef.write(line)
+    auth = _resolve_auth(device)
+    username = auth["username"]
+    password = auth["password"]
+    key_filename = auth["key_filename"]
+    port = int(device.get("port", DEFAULT_PORT))
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        host = device.get("hostname", "")
+        ip = device.get("ip", "")
+        with print_lock:
+            print(f"connecting... {host} | {ip}", flush=True)
+            
+        client.connect(
+            hostname=host_for_connect,
+            port=port,
+            username=username,
+            password=password,
+            key_filename=key_filename,
+            look_for_keys=bool(not password and not key_filename),
+            allow_agent=True,
+            timeout=timeout,
+            banner_timeout=banner_timeout,
+        )
+        chan = client.invoke_shell()
+        chan.settimeout(timeout)
+
+        with print_lock:
+            print(f"connected... {host} | {ip}", flush=True)
+
+        # read initial banner/prompt
+        time.sleep(cmd_delay)
+        try:
+            _ = chan.recv(65535)
+        except Exception:
+            pass
+
+        outs: List[str] = []
+        for cmd in commands:
+            line = cmd.rstrip("\n") + "\n"
+            chan.send(line)
+            time.sleep(cmd_delay)
+
+            end_time = time.time() + timeout
+            chunk: List[str] = []
+            while time.time() < end_time:
+                try:
+                    if chan.recv_ready():
+                        data = chan.recv(65535).decode("utf-8", errors="ignore")
+                        chunk.append(data)
+                        time.sleep(0.05)
+                    else:
+                        time.sleep(0.05)
+                except socket.timeout:
+                    break
+            outs.append(f"\n################################################ {cmd}\n" + "".join(chunk))
+
+        try:
+            chan.close()
+        finally:
+            client.close()
+
+        display = device.get("display_name") or host_for_connect
+        return SSHResult(host=display, ok=True, output="\n".join(outs))
+    except Exception as e:
+        try:
+            client.close()
+        except Exception:
+            pass
+        display = device.get("display_name") or host_for_connect
+        return SSHResult(host=display, ok=False, error=f"{type(e).__name__}: {e}")
+
+
+def _write_output(output_dir: Path, host_label: str, content: str, prefix: Optional[str] = None) -> Path:
+    safe_host = host_label.replace("/", "_")
+    name = f"{(prefix + '_') if prefix else ''}{safe_host}_{_timestamp()}.txt"
+    fp = output_dir / name
+    _write_text(fp, content)
+    return fp
+
+
+# ---------------------------- Device loading ---------------------------- #
+
+def _normalize_device(
+    dev: Dict[str, Any],
+    default_username: Optional[str],
+    keyring_service: str,
+) -> Dict[str, Any]:
+    """
+    Normalize a single device dict:
+      - connect_host: prefer 'ip', else 'host'/'hostname'
+      - display_name: prefer 'hostname', else 'host'/'ip'
+      - username: device['username'] or default_username
+      - keyring_service default
+    """
+    connect_host = dev.get("ip") or dev.get("host") or dev.get("hostname")
+    display_name = dev.get("hostname") or dev.get("host") or dev.get("ip") or "unknown"
+
+    out = dict(dev)
+    out["connect_host"] = connect_host
+    out["display_name"] = display_name
+    if default_username and not out.get("username"):
+        out["username"] = default_username
+    if not out.get("keyring_service"):
+        out["keyring_service"] = keyring_service
+    return out
+
+
+def _load_devices(
+    devices: Optional[Union[Iterable[Dict[str, Any]], str]] = None,
+    device_groups: Optional[List[str]] = None,
+    default_username: Optional[str] = None,
+    keyring_service: str = DEFAULT_SERVICE,
+) -> List[Dict[str, Any]]:
+    """
+    Load devices from a list or a JSON file. If JSON is a dict-of-lists,
+    optionally filter by group names.
+    """
+    if isinstance(devices, (str, os.PathLike)):
+        data = json.loads(Path(devices).read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            raw = data
+        elif isinstance(data, dict):
+            # Select groups
+            selected_keys = list(data.keys()) if not device_groups else [g for g in device_groups if g in data]
+            raw = []
+            for k in selected_keys:
+                grp = data.get(k, [])
+                if isinstance(grp, list):
+                    raw.extend(grp)
         else:
-            print("ALL DONE, NO ERROR")
+            raise ValueError("Unsupported JSON structure for devices")
+    else:
+        raw = list(devices)
+
+    return [_normalize_device(d, default_username, keyring_service) for d in raw]
+
+
+def _load_commands(commands: Optional[Iterable[str]], commands_file: Optional[str]) -> List[str]:
+    if commands is not None:
+        return [c for c in commands if str(c).strip()]
+    if commands_file:
+        return [line.strip() for line in Path(commands_file).read_text(encoding="utf-8").splitlines() if line.strip()]
+    raise ValueError("No commands provided. Pass a list or --commands-file")
+
+
+
+def _print_summary(summary: dict) -> None:
+    stats = summary.get("stats", {})
+    print(f"Stats: ok={stats.get('ok',0)} failed={stats.get('failed',0)} total={stats.get('total',0)}")
+    results = summary.get("results", [])
+    if not results:
+        return
+    print("Results:")
+    for r in results:
+        host = r.get("host", "unknown")
+        ok = r.get("ok", False)
+        if ok:
+            outfile = r.get("outfile") or ""
+            print(f"  {host:25} OK    {outfile}")
+        else:
+            err = (r.get("error") or "").strip()
+            print(f"  {host:25} FAIL  {err}")
+# ---------------------------- Batch runner ---------------------------- #
+
+def run_batch(
+    commands: Optional[Iterable[str]] = None,
+    devices: Optional[Union[Iterable[Dict[str, Any]], str]] = None,
+    output_dir: Union[str, os.PathLike] = "./outputs",
+    archive_dir: Optional[Union[str, os.PathLike]] = None,
+    max_workers: int = 20,
+    timeout: int = 20,
+    cmd_delay: float = 0.2,
+    per_host_prefix: Optional[str] = None,
+    also_return_outputs: bool = True,
+    write_json_summary: bool = True,
+    summary_filename: str = "summary.json",
+    device_groups: Optional[List[str]] = None,        # NEW
+    default_username: Optional[str] = None,           # NEW
+    keyring_service: str = DEFAULT_SERVICE,           # NEW
+) -> Dict[str, Any]:
+    """
+    Programmatic API to run commands on multiple devices.
+    Uses keyring if password not provided.
+    Supports dict-of-lists device JSON with optional group filtering.
+    """
+    if not commands:
+        commands = COMMANDS
+    if not devices:
+        devices = DEFAULT_DEVICES_FILE
+    out_dir = Path(output_dir)
+    _ensure_dir(out_dir)
+    arc_dir = Path(archive_dir) if archive_dir else None
+    if arc_dir:
+        _ensure_dir(arc_dir)
+
+    # Default groups fallback: use TARGET if device_groups not provided
+    eff_groups = device_groups if device_groups is not None else TARGET
+    device_list = _load_devices(
+        devices,
+        device_groups=eff_groups,
+        default_username=default_username,
+        keyring_service=keyring_service,
+    )
+
+    results: List[SSHResult] = []
+    stats = {"ok": 0, "failed": 0, "total": len(device_list)}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futs = {
+            pool.submit(_ssh_run_one, dev, list(commands), timeout, cmd_delay): dev for dev in device_list
+        }
+        for fut in concurrent.futures.as_completed(futs):
+            dev = futs[fut]
+            host_label = dev.get("display_name") or dev.get("hostname") or dev.get("host") or dev.get("ip") or "unknown"
+            res: SSHResult = fut.result()
+            if res.ok:
+                stats["ok"] += 1
+                outfile = _write_output(out_dir, host_label, res.output, prefix=per_host_prefix)
+                res.outfile = outfile
+                if arc_dir:
+                    _write_text(arc_dir / outfile.name, res.output)
+            else:
+                stats["failed"] += 1
+            results.append(res)
+
+    summary = {
+        "stats": stats,
+        "results": [{k: v for k, v in r.to_dict().items() if k != "output"} for r in results],
+        "output_dir": str(out_dir.resolve()),
+    }
+    if write_json_summary:
+        _write_text(out_dir / summary_filename, json.dumps(summary, indent=2))
+    _print_summary(summary)
+    return summary
+
+
+# ---------------------------- CLI facade ---------------------------- #
+
+def main(
+    a: Optional[bool] = None,                # archive existing txt before run
+    l: Optional[bool] = None,                # loop mode (run once between 20:00-21:00 daily)
+    commands: Optional[List[str]] = None,
+    commands_file: Optional[str] = None,
+    devices: str | List[Dict[str, Any]] | None = None,
+    output_dir: Optional[str] = None,
+    archive_dir: Optional[str] = None,
+    max_workers: Optional[int] = None,
+    timeout: Optional[int] = None,
+    per_host_prefix: Optional[str] = None,
+    device_groups: Optional[List[str]] = None,
+    default_username: Optional[str] = None,
+    keyring_service: str = DEFAULT_SERVICE,
+) -> Optional[Dict[str, Any]]:
+    """
+    If an arg is None, fall back to defaults/environment.
+    """
+    out_dir = Path(output_dir or "./outputs")
+    arc_dir = Path(archive_dir) if archive_dir else None
+    if arc_dir:
+        _ensure_dir(arc_dir)
+
+    # Load commands (fallback to default COMMANDS if none provided)
+    if commands is not None or commands_file:
+        cmd_list = _load_commands(commands, commands_file)
+    else:
+        cmd_list = COMMANDS
+
+    # Load devices; default to device.json next to this script if not provided
+    if devices is None:
+        devices_input = DEFAULT_DEVICES_FILE
+    else:
+        devices_input = devices
+
+    # Pre-archive if requested
+    if a:
+        if not arc_dir:
+            # default archive under output_dir/archives
+            arc_dir = out_dir / "archives"
+            _ensure_dir(arc_dir)
+        _archive_current_txt(out_dir, arc_dir)
+
+    def _one_run():
+        return run_batch(
+            commands=cmd_list,
+            devices=devices_input,
+            output_dir=out_dir,
+            archive_dir=arc_dir,
+            max_workers=max_workers or 20,
+            timeout=timeout or 20,
+            per_host_prefix=per_host_prefix,
+            write_json_summary=True,
+            device_groups=device_groups,
+            default_username=default_username,
+            keyring_service=keyring_service,
+        )
 
     if l:
+        print("Loop mode enabled: will run once between 20:00–21:00 local time, then sleep ~57 minutes.")
         has_run_today = False
-
         while True:
             now = datetime.now()
-            print(f"[{now}] Checking if it's between 8-9 PM")
-
-            if now.hour == 20 and not has_run_today:
-                print("Kicks off...")
-                run_all()
+            if 20 <= now.hour < 21 and not has_run_today:
+                print(f"[{now}] Window open, running once...")
+                _one_run()
                 has_run_today = True
             elif now.hour >= 21:
-                has_run_today = False  # Reset after 9 PM
-
+                has_run_today = False  # reset after 9 PM
             print("In the loop...")
             time.sleep(57 * 60)
     else:
-        run_all()
+        return _one_run()
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-a", action="store_true", help="Archive all .txt files before starting")
-    parser.add_argument("-l", action="store_true", help="Enable loop mode (run once between 8-9 PM, then repeat)")
+    parser = argparse.ArgumentParser(description="SSH batch runner (keyring + group-aware)")
+    # existing flags
+    parser.add_argument("-a", action="store_true", help="Archive existing .txt files in output dir before run")
+    parser.add_argument("-l", action="store_true", help="Enable loop mode (run once between 8–9 PM, then repeat)")
+    # new knobs
+    parser.add_argument("--commands-file", help="Path to file with one command per line (optional; defaults to built-in commands)")
+    parser.add_argument("--devices", help="Path to device.json (dict-of-lists supported); defaults to device.json next to this script")
+    parser.add_argument("--output-dir", default="./outputs", help="Directory to write per-host outputs")
+    parser.add_argument("--archive-dir", help="Optional archive directory (default: outputs/archives)")
+    parser.add_argument("--max-workers", type=int, default=20, help="Concurrency")
+    parser.add_argument("--timeout", type=int, default=20, help="Per-device timeout (seconds)")
+    parser.add_argument("--prefix", dest="per_host_prefix", help="Filename prefix for per-host outputs")
+    parser.add_argument("--device-groups", nargs="+", help="Only run against these groups from the devices JSON")
+    parser.add_argument("--default-username", help="Username to use when device entry omits it (keyring lookup applies)")
+    parser.add_argument("--keyring-service", default=DEFAULT_SERVICE, help=f"Keyring service name (default: {DEFAULT_SERVICE})")
+
     args = parser.parse_args()
 
-    main(a=args.a, l=args.l)
+    try:
+        main(
+            a=args.a,
+            l=args.l,
+            commands=None,
+            commands_file=args.commands_file,
+            devices=args.devices,
+            output_dir=args.output_dir,
+            archive_dir=args.archive_dir,
+            max_workers=args.max_workers,
+            timeout=args.timeout,
+            per_host_prefix=args.per_host_prefix,
+            device_groups=args.device_groups,
+            default_username=args.default_username,
+            keyring_service=args.keyring_service,
+        )
+    except KeyboardInterrupt:
+        print("Interrupted by user.", file=sys.stderr)
+        sys.exit(130)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)

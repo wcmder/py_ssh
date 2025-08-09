@@ -44,6 +44,8 @@ bin/
 include/
 lib/
 outputs/
+env/
+env*/
 *.json
 *.wpr
 *.wpu
