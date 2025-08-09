@@ -1,18 +1,4 @@
-# NOTE device.json format -
-
-{
-    "router": [
-      { "hostname": "router1", "ip": "192.168.1.138" }
-    ],
-
-    "disa": [
-      { "hostname": "r1", "ip": "10.98.1.1" },
-      { "hostname": "r2", "ip": "10.98.1.2" },
-      { "hostname": "r3", "ip": "10.100.16.15" },
-      { "hostname": "r4", "ip": "10.100.16.16" }
-    ]
-}
-
+#
 # Mac kerying cred 
 # creat: python3 -c 'import keyring; keyring.set_password("py_ssh", "wder1", "xxxxxxxxxxx")'
 # delete python3 -c 'import keyring; keyring.delete_password("py_ssh", "wder1")
@@ -29,7 +15,7 @@ import argparse
 import shutil
 import keyring
 
-TARGET = ["campus"]
+TARGET = ["mpls-new"]
 THREAD = 10
 
 # === Commands to Run ===
