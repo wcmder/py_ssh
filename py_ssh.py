@@ -34,7 +34,9 @@ print_lock = Lock()
 DEFAULT_DEVICES_FILE = Path(__file__).with_name("device.json")
 DEFAULT_SERVICE = "py_ssh"
 DEFAULT_PORT = 22
+#
 TARGET = ["mpls"]  # default groups to use when none provided
+THREAD = 10
 COMMANDS = [
     "sh int des | i up",
     "sh ip int b | i up",
@@ -44,7 +46,6 @@ COMMANDS = [
     "sh bridge-domain",
     "sh ip nat translations"
 ]
-THREAD = 10
 
 # ---------------------------- Helpers ---------------------------- #
 
