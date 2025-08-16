@@ -4,16 +4,19 @@
   ],
 
   "mpls": [
-    { "hostname": "mpls-r11", "ip": "10.100.16.25" },
-    { "hostname": "mpls-r10", "ip": "10.100.16.24" },
-    { "hostname": "mpls-old", "ip": "10.100.16.18" },
+    { "hostname": "mpls_r11", "ip": "10.100.16.25" },
+    { "hostname": "mpls_r10", "ip": "10.100.16.24" },
     { "hostname": "asr1006", "ip": "10.100.16.31" }
   ],
   "mpls-new": [
-    { "hostname": "mpls-r11", "ip": "10.100.16.25" },
-    { "hostname": "mpls-r10", "ip": "10.100.16.24" }
+    { "hostname": "mpls_r11", "ip": "10.100.16.25" },
+    { "hostname": "mpls_r10", "ip": "10.100.16.24" }
   ],
-  
+  "mpls-now": [
+    { "hostname": "mpls-r11", "ip": "10.100.16.25" },
+    { "hostname": "asr1006", "ip": "10.100.16.31" }
+  ],
+
   "4451": [
     { "hostname": "c4451-pentagon-1", "ip": "10.98.1.1" },
     { "hostname": "c4451-pentagon-sm-1", "ip": "10.98.1.2" },

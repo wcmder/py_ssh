@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union
 import paramiko
 from threading import Lock
+import re
 
 try:
     import keyring  # type: ignore
@@ -30,16 +31,20 @@ except Exception:  # pragma: no cover
 
 print_lock = Lock()
 
-COMMANDS = [
-    "show run"
-]
-
 DEFAULT_DEVICES_FILE = Path(__file__).with_name("device.json")
-
-TARGET = ["mpls-new"]  # default groups to use when none provided
-
 DEFAULT_SERVICE = "py_ssh"
 DEFAULT_PORT = 22
+TARGET = ["mpls"]  # default groups to use when none provided
+COMMANDS = [
+    "sh int des | i up",
+    "sh ip int b | i up",
+    "sh ip arp",
+    "sh ip bgp summ",
+    "sh ip route",
+    "sh bridge-domain",
+    "sh ip nat translations"
+]
+THREAD = 10
 
 # ---------------------------- Helpers ---------------------------- #
 
@@ -83,7 +88,7 @@ def _resolve_auth(device: Dict[str, Any]) -> Dict[str, Any]:
       3) key_filename
       4) ssh agent / default keys
     """
-    username = device.get("username") or device.get("user")
+    username = device.get("username") or device.get("user") or 'wder1'
     password = device.get("password")
     key_filename = device.get("key_filename")
     service = device.get("keyring_service", DEFAULT_SERVICE)
@@ -114,6 +119,32 @@ class SSHResult:
             "error": self.error,
             "outfile": str(self.outfile) if self.outfile else None,
         }
+
+
+def read_until_prompt(shell, hostname, prompt_regex=r'[>#]\s*$', timeout=60):
+    buffer = ''
+    last_data_time = time.time()
+
+    while True:
+        if shell.recv_ready():
+            chunk = shell.recv(65535).decode(errors='ignore')
+            buffer += chunk
+            last_data_time = time.time()
+        else:
+            time.sleep(0.2)
+
+        # if no new data for a while, check if we're done
+        if time.time() - last_data_time > 2:
+            lines = buffer.strip().splitlines()
+            if lines and re.search(prompt_regex, lines[-1]):
+                break
+
+        # hard timeout
+        if time.time() - last_data_time > timeout:
+            print("[WARN] Prompt not detected, breaking read loop - "+hostname)
+            break
+
+    return buffer
 
 
 def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
@@ -163,6 +194,9 @@ def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
         except Exception:
             pass
 
+        chan.send("terminal length 0\n")
+        #read_until_prompt(chan, host)  # clear its output
+
         outs: List[str] = []
         for cmd in commands:
             line = cmd.rstrip("\n") + "\n"
@@ -200,7 +234,7 @@ def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
 
 
 def _write_output(output_dir: Path, host_label: str, content: str, prefix: Optional[str] = None) -> Path:
-    safe_host = host_label.replace("/", "_")
+    safe_host = host_label.replace("/", "-").replace("_", "-")
     name = f"{(prefix + '_') if prefix else ''}{safe_host}_{_timestamp()}.txt"
     fp = output_dir / name
     _write_text(fp, content)
@@ -409,12 +443,13 @@ def main(
         _archive_current_txt(out_dir, arc_dir)
 
     def _one_run():
+        global THREAD
         return run_batch(
             commands=cmd_list,
             devices=devices_input,
             output_dir=out_dir,
             archive_dir=arc_dir,
-            max_workers=max_workers or 20,
+            max_workers=max_workers or THREAD,
             timeout=timeout or 20,
             per_host_prefix=per_host_prefix,
             write_json_summary=True,
