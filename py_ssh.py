@@ -38,8 +38,9 @@ DEFAULT_PORT = 22
 TARGET = ["mpls"]  # default groups to use when none provided
 THREAD = 10
 COMMANDS = [
-    "sh int des | i up; cisco interface status",
-    "sh ip int b | i up",
+    "terminal length 0",
+    "sh int des | i up; interface description",
+    "sh ip int b | i up; cisco interface status",
     "sh ip arp; arp table",
     "sh ip bgp summ; bgp summary",
     "sh ip route",
@@ -195,17 +196,17 @@ def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
         except Exception:
             pass
 
-        chan.send("terminal length 0\n")
+        #chan.send("terminal length 0\n")
         #read_until_prompt(chan, host)  # clear its output
 
         outs: List[str] = []
         for cmd in commands:
-            line = cmd.rstrip("\n") + "\n"
+            line = cmd.rstrip("\n")
             if ";" in cmd:
-                cmd_line = line.split(";")[0]
+                cmd_line = line.split(";")[0] + "\n"
                 commt_line = line.split(";")[1]
             else:
-                cmd_line = line
+                cmd_line = line + "\n"
                 commt_line = line
             chan.send(cmd_line)
             time.sleep(cmd_delay)
