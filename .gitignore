@@ -49,4 +49,6 @@ env*/
 *.json
 *.wpr
 *.wpu
+*.pyc
+device.json
 

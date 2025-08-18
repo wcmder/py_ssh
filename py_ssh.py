@@ -38,12 +38,12 @@ DEFAULT_PORT = 22
 TARGET = ["mpls"]  # default groups to use when none provided
 THREAD = 10
 COMMANDS = [
-    "sh int des | i up",
+    "sh int des | i up; cisco interface status",
     "sh ip int b | i up",
-    "sh ip arp",
-    "sh ip bgp summ",
+    "sh ip arp; arp table",
+    "sh ip bgp summ; bgp summary",
     "sh ip route",
-    "sh bridge-domain",
+    "sh bridge-domain; bridge domain",
     "sh ip nat translations"
 ]
 
@@ -201,7 +201,13 @@ def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
         outs: List[str] = []
         for cmd in commands:
             line = cmd.rstrip("\n") + "\n"
-            chan.send(line)
+            if ";" in cmd:
+                cmd_line = line.split(";")[0]
+                commt_line = line.split(";")[1]
+            else:
+                cmd_line = line
+                commt_line = line
+            chan.send(cmd_line)
             time.sleep(cmd_delay)
 
             end_time = time.time() + timeout
@@ -216,7 +222,7 @@ def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
                         time.sleep(0.05)
                 except socket.timeout:
                     break
-            outs.append(f"\n################################################ {cmd}\n" + "".join(chunk))
+            outs.append(f"\n################################################ {commt_line}\n" + "".join(chunk))
 
         try:
             chan.close()
@@ -234,9 +240,13 @@ def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
         return SSHResult(host=display, ok=False, error=f"{type(e).__name__}: {e}")
 
 
-def _write_output(output_dir: Path, host_label: str, content: str, prefix: Optional[str] = None) -> Path:
+def _write_output(output_dir: Path, host_label: str, content: str, append = None, prefix: Optional[str] = None) -> Path:
     safe_host = host_label.replace("/", "-").replace("_", "-")
-    name = f"{(prefix + '_') if prefix else ''}{safe_host}_{_timestamp()}.txt"
+    if append:
+        lable = str(append)
+        name = f"{(prefix + '_') if prefix else ''}{safe_host}_{lable}.txt"
+    else:
+        name = f"{(prefix + '_') if prefix else ''}{safe_host}_{_timestamp()}.txt"
     fp = output_dir / name
     _write_text(fp, content)
     return fp
@@ -341,6 +351,7 @@ def run_batch(
     device_groups: Optional[List[str]] = None,        # NEW
     default_username: Optional[str] = None,           # NEW
     keyring_service: str = DEFAULT_SERVICE,           # NEW
+    append: str = None,
 ) -> Dict[str, Any]:
     """
     Programmatic API to run commands on multiple devices.
@@ -379,7 +390,7 @@ def run_batch(
             res: SSHResult = fut.result()
             if res.ok:
                 stats["ok"] += 1
-                outfile = _write_output(out_dir, host_label, res.output, prefix=per_host_prefix)
+                outfile = _write_output(out_dir, host_label, res.output, append, prefix=per_host_prefix,)
                 res.outfile = outfile
                 if arc_dir:
                     _write_text(arc_dir / outfile.name, res.output)
@@ -414,6 +425,7 @@ def main(
     device_groups: Optional[List[str]] = None,
     default_username: Optional[str] = None,
     keyring_service: str = DEFAULT_SERVICE,
+    append : str = None
 ) -> Optional[Dict[str, Any]]:
     """
     If an arg is None, fall back to defaults/environment.
@@ -457,6 +469,7 @@ def main(
             device_groups=device_groups,
             default_username=default_username,
             keyring_service=keyring_service,
+            append=append,
         )
 
     if l:
@@ -492,6 +505,7 @@ if __name__ == "__main__":
     parser.add_argument("--device-groups", nargs="+", help="Only run against these groups from the devices JSON")
     parser.add_argument("--default-username", help="Username to use when device entry omits it (keyring lookup applies)")
     parser.add_argument("--keyring-service", default=DEFAULT_SERVICE, help=f"Keyring service name (default: {DEFAULT_SERVICE})")
+    parser.add_argument("--append", required=False, metavar="LABEL", help="Append output to result file instead of timestamp")
 
     args = parser.parse_args()
 
@@ -510,6 +524,7 @@ if __name__ == "__main__":
             device_groups=args.device_groups,
             default_username=args.default_username,
             keyring_service=args.keyring_service,
+            append=args.append,
         )
     except KeyboardInterrupt:
         print("Interrupted by user.", file=sys.stderr)
