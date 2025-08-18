@@ -23,6 +23,8 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 import paramiko
 from threading import Lock
 import re
+import select
+import time
 
 try:
     import keyring  # type: ignore
@@ -30,6 +32,10 @@ except Exception:  # pragma: no cover
     keyring = None
 
 print_lock = Lock()
+
+PER_CMD_TIMEOUT = 10.0      # seconds: hard cap per command
+IDLE_QUIET = 2.0           # seconds: stop when no data arrives for this long
+SELECT_WAIT = 0.50         # seconds: max wait for readability check
 
 DEFAULT_DEVICES_FILE = Path(__file__).with_name("device.json")
 DEFAULT_SERVICE = "py_ssh"
@@ -209,20 +215,37 @@ def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
                 cmd_line = line + "\n"
                 commt_line = line
             chan.send(cmd_line)
-            time.sleep(cmd_delay)
+            time.sleep(cmd_delay)  # tiny pacing to allow device to respond
 
-            end_time = time.time() + timeout
-            chunk: List[str] = []
-            while time.time() < end_time:
-                try:
-                    if chan.recv_ready():
-                        data = chan.recv(65535).decode("utf-8", errors="ignore")
-                        chunk.append(data)
-                        time.sleep(0.05)
-                    else:
-                        time.sleep(0.05)
-                except socket.timeout:
+            start = time.monotonic()
+            last_data = start
+            chunks: List[str] = []
+            while True:
+                # hard timeout?
+                now = time.monotonic()
+                if now - start >= PER_CMD_TIMEOUT:
                     break
+                # quiet long enough?
+                if now - last_data >= IDLE_QUIET:
+                    break
+
+                # wait briefly for data
+                r, _, _ = select.select([chan], [], [], SELECT_WAIT)
+                if r:
+                    try:
+                        if chan.recv_ready():
+                            data = chan.recv(65535).decode("utf-8", errors="ignore")
+                            if data:
+                                chunks.append(data)
+                                last_data = time.monotonic()
+                                continue
+                        # (optional) stderr:
+                        # if chan.recv_stderr_ready():
+                        #     _ = chan.recv_stderr(65535)
+                    except socket.timeout:
+                        # just loop and keep the idle/timeout checks
+                        pass
+                # if not readable, loop; idle check will eventually stop it
             outs.append(f"\n################################################ {commt_line}\n" + "".join(chunk))
 
         try:
