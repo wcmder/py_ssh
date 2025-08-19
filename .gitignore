@@ -51,4 +51,5 @@ env*/
 *.wpu
 *.pyc
 device.json
+*.xlsx
 

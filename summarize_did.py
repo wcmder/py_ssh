@@ -11,9 +11,9 @@ Output:
       2) Summary: per-prefix combined ranges string
 
 Usage examples:
-  python summarize_dids.py input.xlsx
-  python summarize_dids.py input.xlsx -o did_ranges.xlsx
-  python summarize_dids.py input.xlsx --sheet "Sheet1" --column A
+  python summarize_did.py input.xlsx
+  python summarize_did.py input.xlsx -o did_ranges.xlsx
+  python summarize_did.py input.xlsx --sheet "Sheet1" --column A
 """
 
 import argparse
