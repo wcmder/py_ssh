@@ -51,25 +51,60 @@ def excel_col_to_index(col: str) -> int:
         idx = idx * 26 + (ord(ch) - ord('A') + 1)
     return idx - 1
 
-def read_dids(path: str, sheet: str | None, column: str) -> List[str]:
-    # Read excel
-    df = pd.read_excel(path, sheet_name=sheet, dtype=str, header=0)  # try with header first
-    # If column looks like a letter and doesn't exist, fall back to index
-    if column in df.columns:
-        series = df[column]
+from typing import List, Optional, Union
+import pandas as pd
+
+def read_dids(path: str, sheet: Optional[Union[str, int]], column: Union[str, int]) -> List[str]:
+    """
+    Read DIDs from an Excel worksheet.
+    - sheet: sheet name (str) or sheet index (int). None/"" -> first sheet (index 0)
+    - column: header name (str), Excel letter(s) (e.g., 'A'), or 0-based index (int or numeric string)
+    """
+    # --- Normalize the sheet argument ---
+    if sheet is None or sheet == "" or str(sheet).lower() == "none":
+        sheet_name = 0
     else:
+        # Turn "0" into 0; keep non-numeric strings as names
         try:
-            col_idx = excel_col_to_index(column)
+            sheet_name = int(sheet)
+        except (TypeError, ValueError):
+            sheet_name = sheet
+
+    # --- Read the sheet (prefer header=0, fall back to no header) ---
+    try:
+        df = pd.read_excel(path, sheet_name=sheet_name, dtype=str, header=0)
+    except Exception:
+        df = pd.read_excel(path, sheet_name=sheet_name, dtype=str, header=None)
+
+    # If we somehow still got a dict (multiple sheets), pick the first one deterministically
+    if isinstance(df, dict):
+        # Prefer numeric keys ordering, then names
+        keys = list(df.keys())
+        # Try to sort by natural order if keys are ints; otherwise default to insertion order
+        try:
+            keys_sorted = sorted(keys)
         except Exception:
-            # If not a letter/number, assume header that isn't present; try first column
-            col_idx = 0
-        # If reading with header failed to expose correct column, try without header
-        try:
+            keys_sorted = keys
+        df = df[keys_sorted[0]]
+
+    # --- Locate the column ---
+    if isinstance(column, int):
+        series = df.iloc[:, column]
+    else:
+        col_str = str(column).strip()
+        # If user passed a numeric string like "0", treat as index
+        if col_str.isdigit():
+            series = df.iloc[:, int(col_str)]
+        elif col_str in getattr(df, "columns", []):
+            series = df[col_str]
+        else:
+            # Treat as Excel letter(s) (A, B, AA, …); fall back to first column on error
+            try:
+                col_idx = excel_col_to_index(col_str)
+            except Exception:
+                col_idx = 0
             series = df.iloc[:, col_idx]
-        except Exception:
-            # Try reload without header
-            df2 = pd.read_excel(path, sheet_name=sheet, dtype=str, header=None)
-            series = df2.iloc[:, col_idx]
+
     return [str(x) for x in series.dropna().tolist()]
 
 def normalize_and_group(dids: List[str]) -> Tuple[Dict[str, List[int]], List[str]]:
