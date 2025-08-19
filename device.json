@@ -4,9 +4,9 @@
   ],
 
   "mpls": [
+    { "hostname": "asr1006", "ip": "10.100.16.31" },
     { "hostname": "mpls_r11", "ip": "10.100.16.25" },
-    { "hostname": "mpls_r10", "ip": "10.100.16.24" },
-    { "hostname": "asr1006", "ip": "10.100.16.31" }
+    { "hostname": "mpls_r10", "ip": "10.100.16.24" }
   ],
   "mpls-new": [
     { "hostname": "mpls_r11", "ip": "10.100.16.25" },

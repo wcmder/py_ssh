@@ -33,8 +33,8 @@ except Exception:  # pragma: no cover
 
 print_lock = Lock()
 
-PER_CMD_TIMEOUT = 10.0      # seconds: hard cap per command
-IDLE_QUIET = 2.0           # seconds: stop when no data arrives for this long
+PER_CMD_TIMEOUT = 6.0      # seconds: hard cap per command
+IDLE_QUIET = 1.2           # seconds: stop when no data arrives for this long
 SELECT_WAIT = 0.50         # seconds: max wait for readability check
 
 DEFAULT_DEVICES_FILE = Path(__file__).with_name("device.json")
@@ -128,7 +128,7 @@ class SSHResult:
             "outfile": str(self.outfile) if self.outfile else None,
         }
 
-
+'''
 def read_until_prompt(shell, hostname, prompt_regex=r'[>#]\s*$', timeout=60):
     buffer = ''
     last_data_time = time.time()
@@ -153,7 +153,7 @@ def read_until_prompt(shell, hostname, prompt_regex=r'[>#]\s*$', timeout=60):
             break
 
     return buffer
-
+'''
 
 def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
     timeout: int = 20,
@@ -224,6 +224,8 @@ def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
                 # hard timeout?
                 now = time.monotonic()
                 if now - start >= PER_CMD_TIMEOUT:
+                    with print_lock:
+                        print(f"max cmd timeout {PER_CMD_TIMEOUT}s reached... {host} | {ip}", flush=True)
                     break
                 # quiet long enough?
                 if now - last_data >= IDLE_QUIET:
@@ -246,7 +248,7 @@ def _ssh_run_one(device: Dict[str, Any], commands: Iterable[str],
                         # just loop and keep the idle/timeout checks
                         pass
                 # if not readable, loop; idle check will eventually stop it
-            outs.append(f"\n################################################ {commt_line}\n" + "".join(chunk))
+            outs.append(f"\n################################################ {commt_line}\n" + "".join(chunks))
 
         try:
             chan.close()
