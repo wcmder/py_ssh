@@ -32,7 +32,7 @@ except Exception:
 # ================= Globals =================
 print_lock = Lock()
 
-PER_CMD_TIMEOUT = 6.0      # seconds: hard cap per command
+PER_CMD_TIMEOUT = 30.0      # seconds: hard cap per command
 IDLE_QUIET = 1.2           # seconds: stop when no data arrives for this long
 SELECT_WAIT = 0.50         # seconds: max wait for readability check
 
@@ -172,6 +172,9 @@ def _ssh_run_one(
 
         with print_lock:
             print(f"[connected] {display}", flush=True)
+
+        # read initial banner/prompt
+        time.sleep(cmd_delay)
 
         outs: List[str] = []
         for cmd in commands:
@@ -461,20 +464,20 @@ def _print_summary(summary: dict) -> None:
     total = stats.get("total", 0)
 
     print("\n================ SUMMARY ================", flush=True)
-    print(f"  Total: {total}  OK: {ok}  Failed: {failed}", flush=True)
+    print(f"  Total: {total}   OK: {ok}   Failed: {failed}", flush=True)
 
     if results:
         print("\n")
-        print(f"  {'Host':25} {'Status':10} {'File'}")
+        print(f"  {'Host:':25} {'Status:':15} {'File:'}")
         for r in results:
             host = r.get("host", "unknown")
             ok = r.get("ok", False)
             if ok:
                 outfile = r.get("outfile") or ""
-                print(f"  {host:25} {'OK':10} {outfile}")
+                print(f"  {host:25} {'OK':15} {outfile}")
             else:
                 err = (r.get("error") or "").strip()
-                print(f"  {host:25} {'FAIL':10} {err}")
+                print(f"  {host:25} {'FAIL':15} {err}")
         print("\n")
 
 
