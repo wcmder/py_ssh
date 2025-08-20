@@ -461,19 +461,21 @@ def _print_summary(summary: dict) -> None:
     total = stats.get("total", 0)
 
     print("\n================ SUMMARY ================", flush=True)
-    print(f"Total: {total}  OK: {ok}  Failed: {failed}", flush=True)
+    print(f"  Total: {total}  OK: {ok}  Failed: {failed}", flush=True)
 
     if results:
-        print("\nResults:")
+        print("\n")
+        print(f"  {'Host':25} {'Status':10} {'File'}")
         for r in results:
             host = r.get("host", "unknown")
             ok = r.get("ok", False)
             if ok:
                 outfile = r.get("outfile") or ""
-                print(f"  {host:25} OK          {outfile}")
+                print(f"  {host:25} {'OK':10} {outfile}")
             else:
                 err = (r.get("error") or "").strip()
-                print(f"  {host:25} FAIL        {err}")
+                print(f"  {host:25} {'FAIL':10} {err}")
+        print("\n")
 
 
 # ================= Orchestration =================
