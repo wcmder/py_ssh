@@ -37,6 +37,7 @@ SELECT_WAIT = 0.50         # seconds: max wait for readability check
 
 DEFAULT_DEVICES_FILE = (Path(__file__).with_name("device.json") if "__file__" in globals() else Path.cwd() / "device.json")
 DEFAULT_SERVICE = "py_ssh"
+DEFAULT_USERNAME = "wder1"
 DEFAULT_PORT = 22
 
 TARGET = ["mpls"]          # default groups to use when none provided
@@ -289,7 +290,7 @@ def _load_devices(
     devices: Optional[Union[Iterable[Union[Dict[str, Any], str]], str]] = None,
     device_groups: Optional[List[str]] = None,
     default_username: Optional[str] = None,
-    keyring_service: str = DEFAULT_SERVICE,
+    keyring_service: str = None,
 ) -> List[Dict[str, Any]]:
     """
     Load devices from:
@@ -299,6 +300,10 @@ def _load_devices(
       - plaintext file (.txt) with one host per line).
     If JSON is dict-of-lists, optionally filter by group names.
     """
+    if default_username is None:
+        default_username = DEFAULT_USERNAME
+    if keyring_service is None:
+        keyring_service = DEFAULT_SERVICE
     def _parse_txt(p: Path):
         return [ln.strip() for ln in p.read_text(encoding="utf-8").splitlines()
                 if ln.strip() and not ln.lstrip().startswith("#")]
