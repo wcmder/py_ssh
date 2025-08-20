@@ -15,6 +15,7 @@ import select
 import shutil
 import sys
 import time
+import socket
 
 # -------- Optional deps --------
 try:
@@ -132,7 +133,8 @@ def _ssh_run_one(
       {host, ok, output (str), error (str|None)}
     """
     host = device.get("connect_host") or device.get("host") or device.get("ip")
-    display = device.get("display_name", host)
+    display = device.get("hostname") or device.get("display_name") or host
+    ip = device.get("ip") or host
     port = int(device.get("port") or DEFAULT_PORT)
 
     if not host:
@@ -163,29 +165,50 @@ def _ssh_run_one(
 
         outs: List[str] = []
         for cmd in commands:
-            chan.send(cmd + "\n")
-            time.sleep(cmd_delay)
+            line = cmd.rstrip("\n")
+            if ";" in cmd:
+                cmd_line = line.split(";", 1)[0] + "\n"
+                commt_line = line.split(";", 1)[1]
+            else:
+                cmd_line = line + "\n"
+                commt_line = line
 
-            chunk: List[str] = []
-            end_time = time.time() + PER_CMD_TIMEOUT
-            last_data = time.time()
+            chan.send(cmd_line)
+            time.sleep(cmd_delay)  # tiny pacing to allow device to respond
 
-            # Read until either quiet for IDLE_QUIET or PER_CMD_TIMEOUT reached
-            while time.time() < end_time:
-                try:
-                    r, _, _ = select.select([chan], [], [], SELECT_WAIT)
-                    if r:
-                        data = chan.recv(65535).decode("utf-8", errors="ignore")
-                        if data:
-                            chunk.append(data)
-                            last_data = time.time()
-                    else:
-                        if time.time() - last_data >= IDLE_QUIET:
-                            break
-                except Exception:
+            start = time.monotonic()
+            last_data = start
+            chunks: List[str] = []
+            while True:
+                # hard timeout?
+                now = time.monotonic()
+                if now - start >= PER_CMD_TIMEOUT:
+                    with print_lock:
+                        print(f"max cmd timeout {PER_CMD_TIMEOUT}s reached... {display} | {ip}", flush=True)
+                    break
+                # quiet long enough?
+                if now - last_data >= IDLE_QUIET:
                     break
 
-            outs.append(f"\n################################################ {cmd}\n" + "".join(chunk))
+                # wait briefly for data
+                r, _, _ = select.select([chan], [], [], SELECT_WAIT)
+                if r:
+                    try:
+                        if chan.recv_ready():
+                            data = chan.recv(65535).decode("utf-8", errors="ignore")
+                            if data:
+                                chunks.append(data)
+                                last_data = time.monotonic()
+                                continue
+                        # (optional) stderr:
+                        # if chan.recv_stderr_ready():
+                        #     _ = chan.recv_stderr(65535)
+                    except socket.timeout:
+                        # just loop and keep the idle/timeout checks
+                        pass
+                # if not readable, loop; idle check will eventually stop it
+
+            outs.append(f"\n################################################ {commt_line}\n" + "".join(chunks))
 
         ssh.close()
         output = "".join(outs)
@@ -193,7 +216,6 @@ def _ssh_run_one(
 
     except Exception as e:
         return {"host": display, "ok": False, "output": "", "error": str(e)}
-
 
 def _write_output(
     output_dir: Path,
