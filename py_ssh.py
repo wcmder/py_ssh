@@ -87,7 +87,7 @@ def _archive_current_txt(output_dir: Path, archive_dir: Path, per_host_prefix: O
             dest = run_dir / item.name
             shutil.move(str(item), str(dest))
             with print_lock:
-                print(f"[archive] {item.name} -> {dest}", flush=True)
+                print(f"[archive] {item.name} -> {archive_dir}", flush=True)
 
 
 def _get_password_from_keyring(service: str, username: str) -> Optional[str]:
@@ -153,7 +153,7 @@ def _ssh_run_one(
         # password intentionally not echoed
 
         with print_lock:
-            print(f"[connect] {display} as {username}", flush=True)
+            print(f"[connecting] {display} as {username}", flush=True)
 
         ssh = paramiko.SSHClient()  # type: ignore[attr-defined]
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # type: ignore[attr-defined]
@@ -169,6 +169,9 @@ def _ssh_run_one(
         )
         chan = ssh.invoke_shell()
         chan.settimeout(timeout)
+
+        with print_lock:
+            print(f"[connected] {display}", flush=True)
 
         outs: List[str] = []
         for cmd in commands:
@@ -194,7 +197,7 @@ def _ssh_run_one(
                 now = time.monotonic()
                 if now - start >= PER_CMD_TIMEOUT:
                     with print_lock:
-                        print(f"[timeout] {display} :: {PER_CMD_TIMEOUT}s", flush=True)
+                        print(f"[timeout] {display} exceeded per cmd timeout {PER_CMD_TIMEOUT}s", flush=True)
                     break
                 # quiet long enough?
                 if now - last_data >= IDLE_QUIET:
@@ -248,15 +251,15 @@ def _write_output(
         steady = f"{append_label}.txt"
         out_fp = output_dir / steady
         _write_text(out_fp, content, append=True)
-        with print_lock:
-            print(f"[write] {safe_host} -> {out_fp.name} (append)", flush=True)
+        #with print_lock:
+        #    print(f"[write] {safe_host} -> {out_fp.name} (append)", flush=True)
         return out_fp
     else:
         name = f"{(prefix+'-' if prefix else '')}{safe_host}-{_timestamp()}.txt"
         out_fp = output_dir / name
         _write_text(out_fp, content, append=False)
-        with print_lock:
-            print(f"[write] {safe_host} -> {out_fp.name}", flush=True)
+        #with print_lock:
+        #    print(f"[write] {safe_host} -> {out_fp.name}", flush=True)
         return out_fp
 
 
@@ -461,22 +464,16 @@ def _print_summary(summary: dict) -> None:
     print(f"Total: {total}  OK: {ok}  Failed: {failed}", flush=True)
 
     if results:
-        print("\nOK devices:", flush=True)
+        print("\nResults:")
         for r in results:
-            if r.get("ok"):
-                host = r.get("host", "unknown")
-                ip = r.get("ip", "")
-                print(f"  ✔ {host} ({ip})", flush=True)
-
-        print("\nFailed devices:", flush=True)
-        for r in results:
-            if not r.get("ok"):
-                host = r.get("host", "unknown")
-                ip = r.get("ip", "")
-                err = r.get("error", "")
-                print(f"  ✘ {host} ({ip}) :: {err}", flush=True)
-
-    print("=========================================\n", flush=True)
+            host = r.get("host", "unknown")
+            ok = r.get("ok", False)
+            if ok:
+                outfile = r.get("outfile") or ""
+                print(f"  {host:25} OK          {outfile}")
+            else:
+                err = (r.get("error") or "").strip()
+                print(f"  {host:25} FAIL        {err}")
 
 
 # ================= Orchestration =================
