@@ -87,7 +87,7 @@ def _archive_current_txt(output_dir: Path, archive_dir: Path, per_host_prefix: O
             dest = run_dir / item.name
             shutil.move(str(item), str(dest))
             with print_lock:
-                print(f"[archive] {item.name} -> {archive_dir}", flush=True)
+                print(f"[archive] {item.name} -> {dest}", flush=True)
 
 
 def _get_password_from_keyring(service: str, username: str) -> Optional[str]:
@@ -99,27 +99,64 @@ def _get_password_from_keyring(service: str, username: str) -> Optional[str]:
         return None
 
 
+# ============= Credential Prefill (main thread) =============
+def _prefill_passwords(
+    devices: List[Dict[str, Any]],
+    default_username: Optional[str],
+    keyring_service: Optional[str],
+    prompt_if_missing: bool,
+) -> None:
+    """
+    Ensure every device has username+password BEFORE threading.
+    Sources (in order): device["password"], keyring(service,username), optional prompt (main thread only).
+    Prompts at most once per (service, username) combo.
+    """
+    import getpass
+
+    cache: Dict[tuple, Optional[str]] = {}
+
+    def _user_svc(d: Dict[str, Any]):
+        user = d.get("username") or default_username or DEFAULT_USERNAME
+        svc = d.get("keyring_service") or keyring_service or DEFAULT_SERVICE
+        return user, svc
+
+    for d in devices:
+        user, svc = _user_svc(d)
+        d["username"] = user
+        d.setdefault("keyring_service", svc)
+
+        pw = d.get("password")
+
+        # keyring (cached per (svc,user))
+        key = (svc, user)
+        if not pw:
+            if key not in cache:
+                cache[key] = _get_password_from_keyring(svc, user)
+            pw = cache[key]
+
+        # optional prompt (main thread only)
+        if not pw and prompt_if_missing:
+            with print_lock:
+                print(f"[auth] password prompt for user '{user}' (service '{svc}')", flush=True)
+            pw = getpass.getpass(f"Enter password for {user}: ")
+            cache[key] = pw
+
+        d["password"] = pw
+
+
 # ================= SSH core =================
 def _resolve_auth(device: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Resolve username/password for a normalized device dict.
-    Username can come from device, CLI default, or global DEFAULT_USERNAME.
-    Password may come from device, keyring, or prompt.
+    Worker-side: trust values filled by main thread; do NOT prompt here.
+    If still missing, raise a clear error to avoid hangs inside threads.
     """
     username = device.get("username") or DEFAULT_USERNAME
     device["username"] = username
 
     password = device.get("password")
     if not password:
-        svc = device.get("keyring_service") or DEFAULT_SERVICE
-        password = _get_password_from_keyring(svc, username)
+        raise RuntimeError(f"Missing password for {username} (not prefilled)")
 
-    if not password:
-        with print_lock:
-            print(f"[auth] password prompt for user '{username}'", flush=True)
-        password = getpass.getpass(f"Enter password for {username}: ")
-
-    device["password"] = password
     return device
 
 
@@ -150,10 +187,13 @@ def _ssh_run_one(
     try:
         _resolve_auth(device)
         username = device["username"]
-        # password intentionally not echoed
+        password = device["password"]
 
         with print_lock:
-            print(f"[connecting] {display} as {username}", flush=True)
+            print(f"[connect] {display} as {username}", flush=True)
+
+        # Tighten connection-level timeouts
+        socket.setdefaulttimeout(timeout)
 
         ssh = paramiko.SSHClient()  # type: ignore[attr-defined]
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # type: ignore[attr-defined]
@@ -161,20 +201,15 @@ def _ssh_run_one(
             hostname=host,
             port=port,
             username=username,
-            password=device["password"],
-            timeout=timeout,
-            banner_timeout=banner_timeout,
+            password=password,
+            timeout=timeout,            # TCP connect
+            banner_timeout=timeout,     # banner read
+            auth_timeout=timeout,       # auth timeout
             look_for_keys=False,
             allow_agent=False,
         )
         chan = ssh.invoke_shell()
         chan.settimeout(timeout)
-
-        with print_lock:
-            print(f"[connected] {display}", flush=True)
-
-        # read initial banner/prompt
-        time.sleep(cmd_delay)
 
         outs: List[str] = []
         for cmd in commands:
@@ -186,8 +221,8 @@ def _ssh_run_one(
                 cmd_line = line + "\n"
                 commt_line = line
 
-            #with print_lock:
-            #    print(f"[send] {display} :: {cmd_line.strip()}", flush=True)
+            with print_lock:
+                print(f"[send] {display} :: {cmd_line.strip()}", flush=True)
 
             chan.send(cmd_line)
             time.sleep(cmd_delay)  # tiny pacing to allow device to respond
@@ -200,7 +235,7 @@ def _ssh_run_one(
                 now = time.monotonic()
                 if now - start >= PER_CMD_TIMEOUT:
                     with print_lock:
-                        print(f"[timeout] {display} exceeded per cmd timeout {PER_CMD_TIMEOUT}s", flush=True)
+                        print(f"[timeout] {display} :: {PER_CMD_TIMEOUT}s", flush=True)
                     break
                 # quiet long enough?
                 if now - last_data >= IDLE_QUIET:
@@ -216,12 +251,8 @@ def _ssh_run_one(
                                 chunks.append(data)
                                 last_data = time.monotonic()
                                 continue
-                        # if chan.recv_stderr_ready():
-                        #     _ = chan.recv_stderr(65535)
                     except socket.timeout:
-                        # just loop and keep the idle/timeout checks
                         pass
-                # if not readable, loop; idle check will eventually stop it
 
             outs.append(f"\n################################################ {commt_line}\n" + "".join(chunks))
 
@@ -254,15 +285,15 @@ def _write_output(
         steady = f"{append_label}.txt"
         out_fp = output_dir / steady
         _write_text(out_fp, content, append=True)
-        #with print_lock:
-        #    print(f"[write] {safe_host} -> {out_fp.name} (append)", flush=True)
+        with print_lock:
+            print(f"[write] {safe_host} -> {out_fp.name} (append)", flush=True)
         return out_fp
     else:
         name = f"{(prefix+'-' if prefix else '')}{safe_host}-{_timestamp()}.txt"
         out_fp = output_dir / name
         _write_text(out_fp, content, append=False)
-        #with print_lock:
-        #    print(f"[write] {safe_host} -> {out_fp.name}", flush=True)
+        with print_lock:
+            print(f"[write] {safe_host} -> {out_fp.name}", flush=True)
         return out_fp
 
 
@@ -471,8 +502,8 @@ def _print_summary(summary: dict) -> None:
         print(f"  {'Host:':25} {'Status:':15} {'File:'}")
         for r in results:
             host = r.get("host", "unknown")
-            ok = r.get("ok", False)
-            if ok:
+            success = r.get("ok", False)
+            if success:
                 outfile = r.get("outfile") or ""
                 print(f"  {host:25} {'OK':15} {outfile}")
             else:
@@ -497,6 +528,8 @@ def run_batch(
     default_username: Optional[str] = None,
     keyring_service: Optional[str] = None,
     append: Optional[str] = None,
+    *,
+    prompt_if_missing: bool = False,   # library default: no prompt
 ) -> dict:
     out_dir = Path(output_dir).expanduser().resolve()
     _ensure_dir(out_dir)
@@ -511,15 +544,22 @@ def run_batch(
         default_username=default_username,
         keyring_service=keyring_service,
     )
+
+    # Prefill creds ONCE in main thread (no worker prompts)
+    _prefill_passwords(
+        normalized_devices,
+        default_username=default_username,
+        keyring_service=keyring_service,
+        prompt_if_missing=prompt_if_missing,
+    )
+
     cmd_list = _load_commands(commands, commands_file)
 
     results: List[Dict[str, Any]] = []
     ok = failed = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        fut_to_dev = {
-            pool.submit(_ssh_run_one, d, cmd_list, timeout): d for d in normalized_devices
-        }
+        fut_to_dev = {pool.submit(_ssh_run_one, d, cmd_list, timeout): d for d in normalized_devices}
         for fut in as_completed(fut_to_dev):
             res = fut.result()
             results.append(res)
@@ -561,7 +601,6 @@ def main(
     append: Optional[str] = None,
 ) -> None:
     out_dir = Path(output_dir or "./outputs").expanduser().resolve()
-    # Archive-dir fallback even when None
     arch_dir = Path(archive_dir).expanduser().resolve() if archive_dir else (out_dir / "archives")
     _ensure_dir(out_dir)
 
@@ -582,6 +621,7 @@ def main(
                 default_username=default_username,
                 keyring_service=keyring_service,
                 append=append,
+                prompt_if_missing=True,   # CLI may prompt once in main thread if keyring missing
             )
             _print_summary(batch)
         except Exception as e:
@@ -653,7 +693,6 @@ if __name__ == "__main__":
 
     # Normalize/validate some arguments
     args.output_dir = args.output_dir.expanduser().resolve()
-    # Compute archive fallback early
     arch_dir = args.archive_dir.expanduser().resolve() if args.archive_dir else (args.output_dir / "archives")
 
     if args.max_workers < 1:
