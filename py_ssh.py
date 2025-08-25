@@ -211,6 +211,9 @@ def _ssh_run_one(
         chan = ssh.invoke_shell()
         chan.settimeout(timeout)
 
+        with print_lock:
+            print(f"[connected] {display}", flush=True)
+
         outs: List[str] = []
         for cmd in commands:
             line = cmd.rstrip("\n")
@@ -221,8 +224,8 @@ def _ssh_run_one(
                 cmd_line = line + "\n"
                 commt_line = line
 
-            with print_lock:
-                print(f"[send] {display} :: {cmd_line.strip()}", flush=True)
+            #with print_lock:
+            #    print(f"[send] {display} :: {cmd_line.strip()}", flush=True)
 
             chan.send(cmd_line)
             time.sleep(cmd_delay)  # tiny pacing to allow device to respond
@@ -235,7 +238,7 @@ def _ssh_run_one(
                 now = time.monotonic()
                 if now - start >= PER_CMD_TIMEOUT:
                     with print_lock:
-                        print(f"[timeout] {display} :: {PER_CMD_TIMEOUT}s", flush=True)
+                        print(f"[timeout] {display} exceeded per cmd timeout {PER_CMD_TIMEOUT}s", flush=True)
                     break
                 # quiet long enough?
                 if now - last_data >= IDLE_QUIET:
@@ -285,15 +288,15 @@ def _write_output(
         steady = f"{append_label}.txt"
         out_fp = output_dir / steady
         _write_text(out_fp, content, append=True)
-        with print_lock:
-            print(f"[write] {safe_host} -> {out_fp.name} (append)", flush=True)
+        #with print_lock:
+        #    print(f"[write] {safe_host} -> {out_fp.name} (append)", flush=True)
         return out_fp
     else:
         name = f"{(prefix+'-' if prefix else '')}{safe_host}-{_timestamp()}.txt"
         out_fp = output_dir / name
         _write_text(out_fp, content, append=False)
-        with print_lock:
-            print(f"[write] {safe_host} -> {out_fp.name}", flush=True)
+        #with print_lock:
+        #    print(f"[write] {safe_host} -> {out_fp.name}", flush=True)
         return out_fp
 
 
