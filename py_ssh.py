@@ -285,7 +285,7 @@ def _write_output(
     """
     safe_host = re.sub(r"[^A-Za-z0-9_.-]", "_", host_label or "unknown")
     if append_label:
-        steady = f"{append_label}.txt"
+        steady = f"{safe_host}-{append_label}.txt"
         out_fp = output_dir / steady
         _write_text(out_fp, content, append=True)
         #with print_lock:
