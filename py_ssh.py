@@ -429,7 +429,7 @@ def _load_devices(
                 accum.append(entry)
         raw_devices = _as_device_dicts(accum)
         with print_lock:
-            print(f"[devices] loaded {len(raw_devices)} from CLI list", flush=True)
+            print(f"[devices] loaded {len(raw_devices)} from CLI", flush=True)
 
     # Case 3: single string: file path OR hostname/IP
     elif isinstance(devices, (str, os.PathLike)):
