@@ -55,6 +55,21 @@ COMMANDS = [
     "sh ip nat translations",
 ]
 
+"""
+Current supported DIFF -
+"cisco interface status"
+"arp table"
+"mac table"
+"access session"
+"bgp summary"
+"lisp status"
+"arista interface status"
+"interface description"
+"portchannel"      
+"isdn status"
+"bridge domain"
+"sip tls"
+"""
 
 # ================= Utilities =================
 def _ensure_dir(p: Path) -> None:
