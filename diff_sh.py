@@ -76,9 +76,10 @@ def get_header_f(pfile):
     for i in range(len(pfile)):
 
         if  marker in pfile[i]:
+            #print(i)
             header_i.append(i)
-            break
-
+            #break
+    #print(header_i)
     return header_i
 
 
@@ -97,7 +98,6 @@ def get_dict_f(pfile, header_i):
         else:
             #print (pfile[int(header_i[i])])
             dict_s[ pfile[int(header_i[i])] ] = pfile[ int(header_i[i])+1:int(header_i[i+1])-1 ]
-
 
     return dict_s
 
@@ -517,7 +517,7 @@ def compare_isdn_f (p1, p2):
 
     for x in xlist:
         #print('all '+x)
-        if xdict[x] != ydict[x]:
+        if set(xdict[x]) != set(ydict[x]):
             rlist.append(x+' '+xdict[x])
             #print(x)
 
@@ -533,21 +533,20 @@ def compare_bdi_f (p1, p2):
     i = 0
     while i < len(p1):
         #print("-------"+str(i))
-        #print(linex)
         x = re.search(r'(bridge-domain \d+)\s.*', p1[i], re.IGNORECASE)
         if x:
             k = 1
             #print(x.group(1))
             xdict[x.group(1)]=""
             
-            for k in range(20):
+            for k in range(1000):
                 n = i+k
                 x1 = re.search(r'.*(\w\w\w\w\.\w\w\w\w\.\w\w\w\w).*', p1[n], re.IGNORECASE)
                 #print(p1[n])
                 if x1:
                     #print(x1.group(1))
                     xdict[x.group(1)] = xdict[x.group(1)] + ', ' + x1.group(1)
-                elif p1[n] == '' or p1[n] == '#END':
+                elif p1[n] == '' or p1[n] == '#END' or p1[n][-1] == "#":
                     #print("--------------------")
                     i = n
                     #print(xdict)
@@ -566,7 +565,7 @@ def compare_bdi_f (p1, p2):
             #print(x.group(1))
             ydict[x.group(1)]=""
             
-            for k in range(20):
+            for k in range(1000):
                 n = j+k
                 x1 = re.search(r'.*(\w\w\w\w\.\w\w\w\w\.\w\w\w\w).*', p2[n], re.IGNORECASE)
                 #print(p2[n])
@@ -574,7 +573,7 @@ def compare_bdi_f (p1, p2):
                     #print(x1.group(1))
                     ydict[x.group(1)] = ydict[x.group(1)] + ', ' + x1.group(1)
                     
-                elif p2[n] == '' or p2[n] == '#END':
+                elif p2[n] == '' or p2[n] == '#END' or p2[n][-1] == "#":
                     #print("--------------------")
                     j = n
                     #print(ydict)
@@ -591,7 +590,7 @@ def compare_bdi_f (p1, p2):
 
     for x in xlist:
         #print('all '+x)
-        if xdict[x] != ydict[x]:
+        if set(xdict[x]) != set(ydict[x]):
             rlist.append(x+xdict[x])
             #print(x)    
     
@@ -653,10 +652,11 @@ def go_compare_f (fpath, dfpath, hostnames):
             r1,r2 = extract_f(pfiles[0].read().splitlines(),pfiles[1].read().splitlines())
 
             #for k, v in r1.items():
-            #    print(v)
+            #    print(k)
             diff = compare_f(r1, r2)
             if len(diff) > 0:
                 diff.insert(0, each_name+"-DIFF.txt\n\n")
+                print(f'writing diff ... {each_name}')
                 try:
                     diff_f = open(os.path.join(fpath,"DIFF",each_name+"-DIFF.txt",), 'w')
                     diff_f.writelines("%s\n" % l for l in diff)
