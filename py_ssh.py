@@ -32,8 +32,8 @@ except Exception:
 # ================= Globals =================
 print_lock = Lock()
 
-PER_CMD_TIMEOUT = 30.0      # seconds: hard cap per command
-IDLE_QUIET = 1.2           # seconds: stop when no data arrives for this long
+PER_CMD_TIMEOUT = 30.0     # seconds: hard cap per command
+IDLE_QUIET = 1.5           # seconds: stop when no data arrives for this long
 SELECT_WAIT = 0.50         # seconds: max wait for readability check
 
 DEFAULT_DEVICES_FILE = (Path(__file__).with_name("device.json") if "__file__" in globals() else Path.cwd() / "device.json")
