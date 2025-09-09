@@ -656,13 +656,16 @@ def go_compare_f (fpath, dfpath, hostnames):
             diff = compare_f(r1, r2)
             if len(diff) > 0:
                 diff.insert(0, each_name+"-DIFF.txt\n\n")
-                print(f'writing diff ... {each_name}')
+                print(f'writing diff to file ... {each_name}', end="")
                 try:
                     diff_f = open(os.path.join(fpath,"DIFF",each_name+"-DIFF.txt",), 'w')
                     diff_f.writelines("%s\n" % l for l in diff)
+                    print(' ... DONE')
                 except:
                     print("Can't write file: "+os.path.join(fpath,"DIFF",each_name+"-DIFF.txt"))
                     sys.exit(0)
+            else: 
+                print(f'NO diff ... {each_name}')
                     
     print('DONE at - '+dfpath)
     print('Please see the -DIFF files\n')
