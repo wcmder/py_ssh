@@ -69,6 +69,7 @@ Current supported DIFF -
 "isdn status"
 "bridge domain"
 "sip tls"
+"ospf database"
 """
 
 # ================= Utilities =================
