@@ -210,15 +210,20 @@ def compare_ip_route_f (p1, p2):
     xdict = {}
     ydict = {}
     for linex in p1:
-        x = re.search(r'^(\s+){0,1}(\w{1,2}\s+){1,2}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(/\d{0,2}).*', linex, re.IGNORECASE)
+        x = re.search(r'^(\s+){0,1}(\w{1,2}\s+){1,2}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(/\d{0,2}){0,1}.*', linex, re.IGNORECASE)
         if x:
-            xdict[x.group(3)+x.group(4)] = x.group(0)
-            #print(x.group(3)+x.group(4))
+            if x.group(4) is not None:
+                xdict[x.group(3)+x.group(4)] = x.group(0)
+            else:
+                xdict[x.group(3)] = x.group(0)
 
     for liney in p2:
-        y = re.search(r'^(\s+){0,1}(\w{1,2}\s+){1,2}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(/\d{0,2}).*', liney, re.IGNORECASE)
+        y = re.search(r'^(\s+){0,1}(\w{1,2}\s+){1,2}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(/\d{0,2}){0,1}.*', liney, re.IGNORECASE)
         if y:
-            ydict[y.group(3)+y.group(4)] = y.group(0)
+            if y.group(4) is not None:
+                ydict[y.group(3)+y.group(4)] = y.group(0)
+            else:
+                ydict[y.group(3)] = y.group(0)
 
     
     xlist = [k for k,v in xdict.items()]
