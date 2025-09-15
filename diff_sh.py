@@ -194,10 +194,40 @@ def output_check_f(key, p1, p2):
         rlist = rlist+(compare_bdi_f(p1, p2))
 
     elif "sip tls" in key.lower():
-        rlist = rlist+(compare_sip_tls_f(p1, p2))   
+        rlist = rlist+(compare_sip_tls_f(p1, p2))
     
     elif "ospf database" in key.lower():
-        rlist = rlist+(compare_ospf_db_f(p1, p2))   
+        rlist = rlist+(compare_ospf_db_f(p1, p2))
+
+    elif "ip route" in key.lower():
+        rlist = rlist+(compare_ip_route_f(p1, p2))   
+
+    return rlist
+
+
+def compare_ip_route_f (p1, p2):
+    rlist = []
+    xdict = {}
+    ydict = {}
+    for linex in p1:
+        x = re.search(r'^(\s+){0,1}(\w{1,2}\s+){1,2}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(/\d{0,2}).*', linex, re.IGNORECASE)
+        if x:
+            xdict[x.group(3)+x.group(4)] = x.group(0)
+            #print(x.group(3)+x.group(4))
+
+    for liney in p2:
+        y = re.search(r'^(\s+){0,1}(\w{1,2}\s+){1,2}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(/\d{0,2}).*', liney, re.IGNORECASE)
+        if y:
+            ydict[y.group(3)+y.group(4)] = y.group(0)
+
+    
+    xlist = [k for k,v in xdict.items()]
+    ylist = [k for k,v in ydict.items()]
+
+    for x in xlist:
+        if x not in ylist:
+            rlist.append(xdict[x])
+
     return rlist
 
 def compare_ospf_db_f (p1, p2):
