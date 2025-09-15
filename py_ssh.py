@@ -44,7 +44,7 @@ DEFAULT_PORT = 22
 TARGET = ["test"]          # default groups to use when none provided
 THREAD = 10                # default concurrency
 
-COMMANDS1 = [
+COMMANDS = [
     "terminal length 0",
     "sh int des | i up; interface description",
     "sh ip int b | i up; cisco interface status",
@@ -53,9 +53,10 @@ COMMANDS1 = [
     "sh ip route",
     "sh bridge-domain; bridge domain",
     "sh ip nat translations",
+    "sh ip ospf data ; ospf database",
 ]
 
-COMMANDS = [
+COMMANDS2 = [
     "terminal length 0",
     "sh ip ospf data ; ospf database",
 ]
