@@ -41,10 +41,10 @@ DEFAULT_SERVICE = "py_ssh"
 DEFAULT_USERNAME = "wder1"
 DEFAULT_PORT = 22
 
-TARGET = ["mpls"]          # default groups to use when none provided
+TARGET = ["test"]          # default groups to use when none provided
 THREAD = 10                # default concurrency
 
-COMMANDS = [
+COMMANDS1 = [
     "terminal length 0",
     "sh int des | i up; interface description",
     "sh ip int b | i up; cisco interface status",
@@ -53,6 +53,11 @@ COMMANDS = [
     "sh ip route",
     "sh bridge-domain; bridge domain",
     "sh ip nat translations",
+]
+
+COMMANDS = [
+    "terminal length 0",
+    "sh ip ospf data ; ospf database",
 ]
 
 """

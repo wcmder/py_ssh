@@ -210,7 +210,7 @@ def compare_ospf_db_f (p1, p2):
             xdict[x.group(1)] = x.group(0)
 
     for liney in p2:
-        y = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*', linex, re.IGNORECASE)
+        y = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*', liney, re.IGNORECASE)
         if y:
             ydict[y.group(1)] = y.group(0)
 
