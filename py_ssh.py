@@ -701,7 +701,7 @@ if __name__ == "__main__":
     parser.add_argument("--prefix", dest="per_host_prefix", metavar="LABEL",
                         help="Filename prefix for per-host outputs")
     parser.add_argument("--device-groups", nargs="+", metavar="GROUP",
-                        help="Groups to select when JSON is a dict-of-lists")
+                        help="Groups to select when JSON is a dict of multiple groups of hosts")
     parser.add_argument("--default-username", metavar="USER",
                         help=f"Username to use when device entry omits it (default: {DEFAULT_USERNAME}; keyring applies)")
     parser.add_argument("--keyring-service", default=DEFAULT_SERVICE, metavar="SERVICE",
