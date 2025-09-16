@@ -18,15 +18,9 @@ from threading import Lock
 from typing import Any, Dict, Iterable, List, Optional, Union
 
 # ---------- Optional deps ----------
-try:
-    import paramiko  # type: ignore
-except Exception:
-    paramiko = None  # type: ignore
+import paramiko
+import keyring
 
-try:
-    import keyring  # type: ignore
-except Exception:
-    keyring = None  # type: ignore
 
 
 # ================= Globals =================
@@ -229,6 +223,7 @@ def _ssh_run_one(
         )
         chan = ssh.invoke_shell()
         chan.settimeout(timeout)
+        #time.sleep(10)                   # wait for MOD
 
         with print_lock:
             print(f"[connected] {display}", flush=True)
@@ -263,18 +258,29 @@ def _ssh_run_one(
                 if now - last_data >= IDLE_QUIET:
                     break
 
-                # wait briefly for data
-                r, _, _ = select.select([chan], [], [], SELECT_WAIT)
-                if r:
-                    try:
-                        if chan.recv_ready():
-                            data = chan.recv(65535).decode("utf-8", errors="ignore")
-                            if data:
-                                chunks.append(data)
-                                last_data = time.monotonic()
-                                continue
-                    except socket.timeout:
-                        pass
+                if os.name == "nt":
+                    # windows 
+                    if chan.recv_ready():
+                        data = chan.recv(65535).decode("utf-8", errors="ignore")
+                        if data:
+                            chunks.append(data)
+                            last_data = time.monotonic()
+                            continue
+                    else:
+                        time.sleep(SELECT_WAIT)
+                else:
+                    # wait briefly for data
+                    r, _, _ = select.select([chan], [], [], SELECT_WAIT)
+                    if r:
+                        try:
+                            if chan.recv_ready():
+                                data = chan.recv(65535).decode("utf-8", errors="ignore")
+                                if data:
+                                    chunks.append(data)
+                                    last_data = time.monotonic()
+                                    continue
+                        except socket.timeout:
+                            pass
 
             outs.append(f"\n################################################ {commt_line}\n" + "".join(chunks))
 
