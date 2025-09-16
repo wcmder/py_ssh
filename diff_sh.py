@@ -33,7 +33,7 @@ def get_hostname_f(path):
 
     hostname = set()
     for n in list(range(len(files))):
-        if 'txt' in files[n]:
+        if 'status.txt' in files[n]:
             hostname.add((re.split('-\w{3,4}-status.txt', files[n])[0]))
     
     print("found these host file -")
@@ -226,12 +226,11 @@ def compare_ip_route_f (p1, p2):
                 ydict[y.group(3)] = y.group(0)
 
     
-    xlist = [k for k,v in xdict.items()]
-    ylist = [k for k,v in ydict.items()]
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        if x not in ylist:
-            rlist.append(xdict[x])
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
 
@@ -250,15 +249,13 @@ def compare_ospf_db_f (p1, p2):
             ydict[y.group(1)] = y.group(0)
 
     
-    xlist = [k for k,v in xdict.items()]
-    ylist = [k for k,v in ydict.items()]
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        if x not in ylist:
-            rlist.append(xdict[x])
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
-
 
 def compare_arp_tbl_f (p1, p2):
     rlist = []
