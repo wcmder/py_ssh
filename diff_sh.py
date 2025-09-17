@@ -1,5 +1,5 @@
 #-------------------------------------------------------------------------------
-# Name:        compare-output
+# Name:        diff_sh
 # Purpose:     main
 #
 # Author:      wallace

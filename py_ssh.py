@@ -35,7 +35,7 @@ DEFAULT_SERVICE = "py_ssh"
 DEFAULT_USERNAME = "wder1"
 DEFAULT_PORT = 22
 
-TARGET = ["test"]          # default groups to use when none provided
+TARGET = ["test", "mpls"]          # default groups to use when none provided
 THREAD = 10                # default concurrency
 
 COMMANDS = [
@@ -223,7 +223,7 @@ def _ssh_run_one(
         )
         chan = ssh.invoke_shell()
         chan.settimeout(timeout)
-        #time.sleep(10)                   # wait for MOD
+        #time.sleep(5)                   # wait for MOD
 
         with print_lock:
             print(f"[connected] {display}", flush=True)
@@ -308,7 +308,7 @@ def _write_output(
     If append_label is provided, append to <append_label>.txt.
     Otherwise, create a timestamped file (optionally using prefix).
     """
-    safe_host = re.sub(r"[^A-Za-z0-9_.-]", "_", host_label or "unknown")
+    safe_host = re.sub(r"[^A-Za-z0-9_.-]", "_", host_label or "unknown").replace("_", "-")
     if append_label:
         steady = f"{safe_host}-{append_label}.txt"
         out_fp = output_dir / steady
@@ -317,7 +317,7 @@ def _write_output(
         #    print(f"[write] {safe_host} -> {out_fp.name} (append)", flush=True)
         return out_fp
     else:
-        name = f"{(prefix+'-' if prefix else '')}{safe_host}-{_timestamp()}.txt"
+        name = f"{(prefix+'-' if prefix else '')}{safe_host}_{_timestamp()}.txt"
         out_fp = output_dir / name
         _write_text(out_fp, content, append=False)
         #with print_lock:
@@ -582,6 +582,8 @@ def run_batch(
     )
 
     cmd_list = _load_commands(commands, commands_file)
+
+    #print(cmd_list)
 
     results: List[Dict[str, Any]] = []
     ok = failed = 0

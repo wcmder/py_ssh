@@ -15,6 +15,7 @@ import sys
 from modules import extract_cm
 from modules.input_cm import *
 import argparse
+from pathlib import Path
 
 def main():
     parser = argparse.ArgumentParser(description="DIFF FOR CONFIG")
@@ -36,20 +37,29 @@ def main():
     extract_cm.extract_f(filex_c, filey_c, file1_u)
 
     if file1_u.tell() == 0:
-        file1_u.write('NO DIFFERENCE FOUND')
+        #file1_u.write('NO DIFFERENCE FOUND')
+        print(f"no diff found --> {Path(file1.name).name} from {Path(file2.name).name}")
+        file1_u.close()
+        os.remove(file1_u.name)
 
-    file1_u.close()
+    else:
+        file1_u.close()
 
     print('Comparing...')
     extract_cm.extract_f(filey_c, filex_c, file2_u)
+
+    if file2_u.tell() == 0:
+        #file2_u.write('NO DIFFERENCE FOUND')
+        print(f"no diff found --> {Path(file2.name).name} from {Path(file1.name).name}")
+        file2_u.close()
+        os.remove(file2_u.name)
+
+    else:
+        file2_u.close()
+    
     file1.close()
     file2.close()
 
-    if file2_u.tell() == 0:
-        file2_u.write('NO DIFFERENCE FOUND')
-
-    file2_u.close()
-    
     # windows only
     #if 'win' in sys.platform:
     #    os.system('start explorer.exe '+paths)
