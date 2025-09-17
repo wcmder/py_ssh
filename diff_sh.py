@@ -268,24 +268,20 @@ def compare_arp_tbl_f (p1, p2):
     for linex in p1:
         x = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', linex, re.IGNORECASE)
         if x:
-            xdict[x.group(2)] = x.group(0)
+            xdict[x.group(3)] = x.group(0)
 
     for liney in p2:
         y = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', liney, re.IGNORECASE)
         if y:
-            ydict[y.group(2)] = y.group(0)
+            ydict[y.group(3)] = y.group(0)
 
-    
-    xlist = [k for k,v in xdict.items()]
-    ylist = [k for k,v in ydict.items()]
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        if x not in ylist:
-            rlist.append(xdict[x])
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
-
-
 
 def compare_mac_tbl_f (p1, p2):
     rlist = []
@@ -302,21 +298,13 @@ def compare_mac_tbl_f (p1, p2):
         if y:
             ydict[y.group(2)+y.group(3)] = y.group(0)
 
-    
-    xlist = [k for k,v in xdict.items()]
-    #print(len(xlist))
-    ylist = [k for k,v in ydict.items()]
-    #print(len(ylist))
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        #print('all '+x)
-        if x not in ylist:
-            rlist.append(xdict[x])
-            #print(x)
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
-
-
 
 def compare_access_ses_f (p1, p2):
     rlist = []
@@ -332,17 +320,11 @@ def compare_access_ses_f (p1, p2):
         if y:
             ydict[y.group(2)+y.group(5)] = y.group(0)
 
-    
-    xlist = [k for k,v in xdict.items()]
-    #print(len(xlist))
-    ylist = [k for k,v in ydict.items()]
-    #print(len(ylist))
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        #print('all '+x)
-        if x not in ylist:
-            rlist.append(xdict[x])
-            #print(x)
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
 
@@ -361,21 +343,13 @@ def compare_int_stat_cisco_f (p1, p2):
         if y:
             ydict[y.group(1)+y.group(2)+y.group(7)+y.group(8)] = y.group(0)
 
-    
-    xlist = [k for k,v in xdict.items()]
-    #print(len(xlist))
-    ylist = [k for k,v in ydict.items()]
-    #print(len(ylist))
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        #print('all '+x)
-        if x not in ylist:
-            rlist.append(xdict[x])
-            #print(x)
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
-
-
 
 def compare_int_stat_arista_f (p1, p2):
     rlist = []
@@ -392,22 +366,13 @@ def compare_int_stat_arista_f (p1, p2):
         if y:
             ydict[y.group(1)+y.group(2)] = y.group(0)
 
-    
-    xlist = [k for k,v in xdict.items()]
-    #print(len(xlist))
-    ylist = [k for k,v in ydict.items()]
-    #print(len(ylist))
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        #print('all '+x)
-        if x not in ylist:
-            rlist.append(xdict[x])
-            #print(x)
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
-
-
-
 
 def compare_int_des_f (p1, p2):
     rlist = []
@@ -424,21 +389,13 @@ def compare_int_des_f (p1, p2):
         if y:
             ydict[y.group(1)+y.group(3)+y.group(4)] = y.group(0)
 
-    
-    xlist = [k for k,v in xdict.items()]
-    #print(len(xlist))
-    ylist = [k for k,v in ydict.items()]
-    #print(len(ylist))
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        #print('all '+x)
-        if x not in ylist:
-            rlist.append(xdict[x])
-            #print(x)
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
-
-
 
 def compare_portchannel_f (p1, p2):
     rlist = []
@@ -458,21 +415,13 @@ def compare_portchannel_f (p1, p2):
         if y:
             ydict[y.group(2)+y.group(4)+y.group(6)] = y.group(0)
 
-    
-    xlist = [k for k,v in xdict.items()]
-    #print(len(xlist))
-    ylist = [k for k,v in ydict.items()]
-    #print(len(ylist))
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        #print('all '+x)
-        if x not in ylist:
-            rlist.append(xdict[x])
-            #print(x)
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
-
-
 
 def compare_bgp_stat_f (p1, p2):
     rlist = []
@@ -492,22 +441,13 @@ def compare_bgp_stat_f (p1, p2):
             ydict[y.group(1)+'-'+y.group(2)] = y.group(0)
             #print(y.group(1)+'-'+y.group(2))
 
-    
-    xlist = [k for k,v in xdict.items()]
-    #print(len(xlist))
-    ylist = [k for k,v in ydict.items()]
-    #print(len(ylist))
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        #print('all '+x)
-        if x not in ylist:
-            rlist.append(xdict[x])
-            #print(x)
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
-
-
-
 
 def compare_lisp_stat_f (p1, p2):
     rlist = []
@@ -528,21 +468,13 @@ def compare_lisp_stat_f (p1, p2):
             ydict[y.group(1)+'-'+y.group(2)] = y.group(0)
             #print(y.group(1)+'-'+y.group(2))
 
-    
-    xlist = [k for k,v in xdict.items()]
-    #print(len(xlist))
-    ylist = [k for k,v in ydict.items()]
-    #print(len(ylist))
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
 
-    for x in xlist:
-        #print('all '+x)
-        if x not in ylist:
-            rlist.append(xdict[x])
-            #print(x)
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
 
     return rlist
-
-
 
 def compare_isdn_f (p1, p2):
     rlist = []

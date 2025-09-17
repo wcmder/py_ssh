@@ -1,0 +1,11 @@
+term len 0
+sh int des | i up; interface description
+sh ip int b | i up; cisco interface status
+sh ip arp; arp table
+sh ip bgp summ; bgp summary
+sh ip route; ip route
+sh bridge-domain; bridge domain
+sh ip nat translations
+sh ip ospf data; ospf database
+sh mac addr; mac table
+sh access-sess; access session

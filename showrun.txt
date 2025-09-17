@@ -1,2 +1,0 @@
-term len 0
-sh ip arp; arp table
