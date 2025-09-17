@@ -35,7 +35,7 @@ DEFAULT_SERVICE = "py_ssh"
 DEFAULT_USERNAME = "wder1"
 DEFAULT_PORT = 22
 
-TARGET = ["test", "mpls"]          # default groups to use when none provided
+TARGET = ["nipr"]          # default groups to use when none provided
 THREAD = 10                # default concurrency
 
 COMMANDS = [

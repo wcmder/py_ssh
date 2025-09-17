@@ -27,3 +27,20 @@ for diff show outputs
 #--- diff_cf ---
 for diff running config
 1. -f force, ignore hostname check
+
+
+
+
+### AIR GAPPED 
+
+# build wheelhouse for air gap (Python 3.13) at internet Windows system
+py -m pip download -r .\requirements.txt -d .\wheelhouse\ --only-binary=:all: --platform win_amd64 --implementation cp --python-version 3.13 --abi cp313
+
+
+# Make & activate a clean venv in the air gap Windows system
+py -m venv env
+.\env\Scripts\Activate.ps1
+
+
+# Install everything from your local wheelhouse in the air gapped Windows system
+py -m pip install --no-index --find-links=wheelhouse -r requirements.txt

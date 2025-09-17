@@ -45,10 +45,14 @@ def get_hostname_f(path):
 def read_f(pre, post):
     try:
         pref = open(pre, 'r')
+    except:
+        print ('can not find: ', end="")
+        print (pre)
+        return 0
+    try:
         postf = open(post, 'r')
     except:
-        print ('Failed opening the files:\n')
-        print (pre)
+        print ('can not find: ', end="")
         print (post)
         return 0
     else:
@@ -264,12 +268,12 @@ def compare_arp_tbl_f (p1, p2):
     for linex in p1:
         x = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', linex, re.IGNORECASE)
         if x:
-            xdict[x.group(3)] = x.group(0)
+            xdict[x.group(2)] = x.group(0)
 
     for liney in p2:
         y = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', liney, re.IGNORECASE)
         if y:
-            ydict[y.group(3)] = y.group(0)
+            ydict[y.group(2)] = y.group(0)
 
     
     xlist = [k for k,v in xdict.items()]
@@ -725,9 +729,12 @@ def go_compare_f (fpath, dfpath, hostnames):
                     sys.exit(0)
             else: 
                 print(f'NO diff ... {each_name}')
-                    
-    print('DONE at - '+dfpath)
-    print('Please see the -DIFF files\n')
+    
+    if not os.listdir(dfpath):
+        print("DONE")
+    else:
+        print('DONE at - '+dfpath)
+        print('Please see the -DIFF files there\n')
 
 
 
