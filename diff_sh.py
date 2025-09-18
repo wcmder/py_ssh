@@ -9,11 +9,13 @@
 # Licence:     <your licence>
 #-------------------------------------------------------------------------------
 
+from __future__ import annotations
+from typing import Optional
 import os
 import sys
 import re
 import glob
-
+import argparse
 
 # get a set all file names under the given path
 def get_hostname_f(path):
@@ -108,14 +110,14 @@ def get_dict_f(pfile, header_i):
 
 
 # compare 
-def compare_f(d1, d2):
-    keys = [k for k,v in d1.items()]
+def compare_f(d1, d2, arp):
+    #keys = [k for k,v in d1.items()]
     diff = []
     #print(keys)
 
     # k is the the orignal line, also the key in dict
 
-    for k in keys:
+    for k in d1.keys():
         #print(k)
         #print(type(d1[k]))
         #print(type(d2[k]))
@@ -125,7 +127,7 @@ def compare_f(d1, d2):
         # pre to post
         if len(d1[k])>2:
             tdiff.append(k)
-            tdiff = tdiff + (output_check_f(k, d1[k], d2[k]))
+            tdiff = tdiff + (output_check_f(k, d1[k], d2[k], arp))
 
         if (len(tdiff))>1:
             tdiff.insert(1, '!   BEFORE')
@@ -138,7 +140,7 @@ def compare_f(d1, d2):
         # only check those with more than 2 lines
         # post to pre
         if len(d2[k])>2:
-            tdiff= tdiff + (output_check_f(k, d2[k], d1[k]))
+            tdiff= tdiff + (output_check_f(k, d2[k], d1[k], arp))
             #print(tdiff)
         if (len(tdiff))>=1:
             if k not in diff:
@@ -160,20 +162,20 @@ def compare_f(d1, d2):
     
 # this take only one element of the dict
 # k is the dict k, p1 or p2 is the value of dict
-def output_check_f(key, p1, p2):
+def output_check_f(key, p1, p2, arp):
     #print(key)
     rlist = []
 
     if "cisco interface status" in key.lower():
         rlist = rlist+(compare_int_stat_cisco_f(p1, p2))
     
-    elif "arp table" in key.lower():
-        rlist = rlist+(compare_arp_tbl_f(p1, p2))
+    elif "ip arp" in key.lower():
+        rlist = rlist+(compare_arp_tbl_f(p1, p2, arp))
 
-    elif "mac table" in key.lower():
+    elif "mac address-table" in key.lower():
         rlist = rlist+(compare_mac_tbl_f(p1, p2))
 
-    elif "access session" in key.lower():
+    elif "access-session" in key.lower():
         rlist = rlist+(compare_access_ses_f(p1, p2))
 
     elif "bgp summary" in key.lower():
@@ -194,7 +196,7 @@ def output_check_f(key, p1, p2):
     elif "isdn status" in key.lower():
         rlist = rlist+(compare_isdn_f(p1, p2))
 
-    elif "bridge domain" in key.lower():
+    elif "bridge-domain" in key.lower():
         rlist = rlist+(compare_bdi_f(p1, p2))
 
     elif "sip tls" in key.lower():
@@ -261,19 +263,54 @@ def compare_ospf_db_f (p1, p2):
 
     return rlist
 
-def compare_arp_tbl_f (p1, p2):
+def compare_arp_tbl_f (p1, p2, arp):
     rlist = []
     xdict = {}
     ydict = {}
-    for linex in p1:
-        x = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', linex, re.IGNORECASE)
-        if x:
-            xdict[x.group(3)] = x.group(0)
 
-    for liney in p2:
-        y = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', liney, re.IGNORECASE)
-        if y:
-            ydict[y.group(3)] = y.group(0)
+    if arp.lower() =="mac":
+        for linex in p1:
+            x = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', linex, re.IGNORECASE)
+            if x:
+                xdict[x.group(3)] = x.group(0)
+
+        for liney in p2:
+            y = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', liney, re.IGNORECASE)
+            if y:
+                ydict[y.group(3)] = y.group(0)
+
+    elif arp.lower() == "ip":
+        for linex in p1:
+            x = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', linex, re.IGNORECASE)
+            if x:
+                xdict[x.group(2)] = x.group(0)
+
+        for liney in p2:
+            y = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', liney, re.IGNORECASE)
+            if y:
+                ydict[y.group(2)] = y.group(0)
+
+    elif arp.lower() == "ipmac":
+        for linex in p1:
+            x = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', linex, re.IGNORECASE)
+            if x:
+                xdict[x.group(2)+x.group(3)] = x.group(0)
+
+        for liney in p2:
+            y = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', liney, re.IGNORECASE)
+            if y:
+                ydict[y.group(2)+y.group(3)] = y.group(0)
+
+    else:  # arp is None
+        for linex in p1:
+            x = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', linex, re.IGNORECASE)
+            if x:
+                xdict[x.group(3)] = x.group(0)
+
+        for liney in p2:
+            y = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', liney, re.IGNORECASE)
+            if y:
+                ydict[y.group(3)] = y.group(0)
 
     xlist = set(xdict.keys())
     ylist = set(ydict.keys())
@@ -622,7 +659,7 @@ def compare_sip_tls_f (p1, p2):
 
 
 
-def go_compare_f (fpath, dfpath, hostnames):
+def go_compare_f (fpath, dfpath, hostnames, arp):
 
     # delete current diff file
     os.makedirs(dfpath, exist_ok = True)
@@ -648,7 +685,7 @@ def go_compare_f (fpath, dfpath, hostnames):
 
             #for k, v in r1.items():
             #    print(k)
-            diff = compare_f(r1, r2)
+            diff = compare_f(r1, r2, arp)
             if len(diff) > 0:
                 diff.insert(0, each_name+"-DIFF.txt\n\n")
                 print(f'writing diff to file ... {each_name}', end="")
@@ -670,15 +707,29 @@ def go_compare_f (fpath, dfpath, hostnames):
 
 
 
-def main():
+def main(
+        arp: Optional[str] = None
+):
     # two compare file with the same hostname automatically
     #paths = '..\\temp\\config\\config-check-result\\'
     fpath = os.path.join(".","outputs")
     dfpath = os.path.join(".","outputs", "DIFF")
     hostnames = get_hostname_f(fpath)
 
-    go_compare_f(fpath, dfpath, hostnames)
+    if arp is not None and arp not in ['ip', 'mac', 'ipmac']:
+        print("arp flag is INVALID, default to None")
+        arp == None
+        
+    go_compare_f(fpath, dfpath, hostnames, arp)
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description="args for diff_sh)")
+    parser.add_argument(
+        "--arp",
+        help="File with one command per line (optional; ignored if positional commands are given)"
+    )
+    args = parser.parse_args()
+    main(
+        arp=args.arp,
+    )

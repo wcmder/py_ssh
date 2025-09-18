@@ -42,10 +42,10 @@ COMMANDS = [
     "terminal length 0",
     "sh int des | i up; interface description",
     "sh ip int b | i up; cisco interface status",
-    "sh ip arp; arp table",
+    "sh ip arp",
     "sh ip bgp summ; bgp summary",
-    "sh ip route; ip route",
-    "sh bridge-domain; bridge domain",
+    "sh ip route",
+    "sh bridge-domain",
     "sh ip nat translations",
     "sh ip ospf data; ospf database",
 ]
@@ -53,17 +53,17 @@ COMMANDS = [
 
 """
 Current supported DIFF -
-"arp table"
-"mac table"
+"ip arp" 
+"mac address-table"
 "cisco interface status"
 "arista interface status"
 "interface description"
-"access session"
+"access-session"
 "bgp summary"
 "lisp status"
 "portchannel"      
 "isdn status"
-"bridge domain"
+"bridge-domain"
 "sip tls"
 "ospf database"
 "ip route"

@@ -22,10 +22,16 @@
 
 #--- diff_sh ---
 for diff show outputs
+flags:
+1. --arp arp table check, with options (None if default when not used)
+   'ip' - check against IP address (for static IP, with possible MAC changes in VMs)
+   'mac' - check against MAC address (for dhcp endpoints, this is the default behavior)
+   'ipmac' - check against both IP/MAC, both must be the same to be matched
 
 
 #--- diff_cf ---
 for diff running config
+flags:
 1. -f force, ignore hostname check
 
 
