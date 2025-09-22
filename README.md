@@ -24,8 +24,8 @@
 for diff show outputs
 flags:
 1. --arp arp table check, with options (None if default when not used)
-   'ip' - check against IP address (for static IP, with possible MAC changes in VMs)
-   'mac' - check against MAC address (for dhcp endpoints, this is the default behavior)
+   'ip'    - check against IP address (for static IP use case, with possible MAC changes in VMs)
+   'mac'   - check against MAC address (for dhcp endpoint use case, this is the default behavior)
    'ipmac' - check against both IP/MAC, both must be the same to be matched
 
 
