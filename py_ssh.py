@@ -312,7 +312,7 @@ def _write_output(
     if append_label:
         steady = f"{safe_host}-{append_label}.txt"
         out_fp = output_dir / steady
-        _write_text(out_fp, content, append=True)
+        _write_text(out_fp, content, append=False)
         #with print_lock:
         #    print(f"[write] {safe_host} -> {out_fp.name} (append)", flush=True)
         return out_fp
