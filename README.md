@@ -36,6 +36,11 @@ flags:
 
 
 
+#-- py_ssh --
+use parameters example
+python3 py_ssh.py --commands-file cmd_shrun.txt --devices dmss.json --device-group dmss
+
+
 
 ### AIR GAPPED 
 
