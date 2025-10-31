@@ -27,7 +27,7 @@ import keyring
 print_lock = Lock()
 
 PER_CMD_TIMEOUT = 30.0     # seconds: hard cap per command
-IDLE_QUIET = 1.5           # seconds: stop when no data arrives for this long
+IDLE_QUIET = 7           # seconds: stop when no data arrives for this long
 SELECT_WAIT = 0.50         # seconds: max wait for readability check
 
 DEFAULT_DEVICES_FILE = (Path(__file__).with_name("device.json") if "__file__" in globals() else Path.cwd() / "device.json")
@@ -250,11 +250,13 @@ def _ssh_run_one(
             while True:
                 # hard timeout?
                 now = time.monotonic()
+                #print(f' cmd timout: {now - start}')
                 if now - start >= PER_CMD_TIMEOUT:
                     with print_lock:
                         print(f"[timeout] {display} exceeded per cmd timeout {PER_CMD_TIMEOUT}s", flush=True)
                     break
                 # quiet long enough?
+                #print(f'quiet timeout: {now - last_data}' )
                 if now - last_data >= IDLE_QUIET:
                     break
 
