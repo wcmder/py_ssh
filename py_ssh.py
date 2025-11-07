@@ -55,8 +55,8 @@ COMMANDS = [
 Current supported DIFF -
 "ip arp" 
 "mac address-table"
-"cisco interface status"
-"arista interface status"
+"cisco interface status - sh ip int bri"
+"arista interface status - sh int status"
 "interface description"
 "access-session"
 "bgp summary"

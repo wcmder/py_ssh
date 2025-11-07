@@ -325,18 +325,20 @@ def compare_mac_tbl_f (p1, p2):
     xdict = {}
     ydict = {}
     for linex in p1:
-        x = re.search(r'(\s){0,10}(\w+)\s+(\w{4}\.\w{4}\.\w{4}\s+((DYNAMIC)|(STATIC)))\s+.*', linex, re.IGNORECASE)
+        x = re.search(r'^(\s+\w+|\w+)\s+(\w{4}\.\w{4}\.\w{4}\s+(DYNAMIC|STATIC))\s+(.*)', linex, re.IGNORECASE)
         if x:
-            xdict[x.group(2)+x.group(3)] = x.group(0)
-            #print(x.group(2))
+            xdict[x.group(1).strip()+x.group(2)] = x.group(0)
+            #print(x.group(1))
 
     for liney in p2:
-        y = re.search(r'(\s){0,10}(\w+)\s+(\w{4}\.\w{4}\.\w{4}\s+((DYNAMIC)|(STATIC)))\s+.*', liney, re.IGNORECASE)
+        y = re.search(r'^(\s+\w+|\w+)\s+(\w{4}\.\w{4}\.\w{4}\s+(DYNAMIC|STATIC))\s+(.*)', liney, re.IGNORECASE)
         if y:
-            ydict[y.group(2)+y.group(3)] = y.group(0)
+            ydict[y.group(1).strip()+y.group(2)] = y.group(0)
 
     xlist = set(xdict.keys())
+    #print(xlist)
     ylist = set(ydict.keys())
+    #print(ylist)
 
     for x in xlist-ylist:
         rlist.append(xdict[x])
@@ -393,15 +395,15 @@ def compare_int_stat_arista_f (p1, p2):
     xdict = {}
     ydict = {}
     for linex in p1:
-        x = re.search(r'((\w|/)+)\s+.*((connected)|(notconnect)|(disabled)).*', linex, re.IGNORECASE)
+        x = re.search(r'((\w|/)+)\s+.*(connected|notconnect|disabled).*', linex, re.IGNORECASE)
         if x:
-            xdict[x.group(1)+x.group(2)] = x.group(0)
-            #print(x.group(2))
+            xdict[x.group(1)+x.group(3)] = x.group(0)
+            #print(x.group(3))
 
     for liney in p2:
-        y = re.search(r'((\w|/)+)\s+.*((connected)|(notconnect)|(disabled)).*', liney, re.IGNORECASE)
+        y = re.search(r'((\w|/)+)\s+.*(connected|notconnect|disabled).*', liney, re.IGNORECASE)
         if y:
-            ydict[y.group(1)+y.group(2)] = y.group(0)
+            ydict[y.group(1)+y.group(3)] = y.group(0)
 
     xlist = set(xdict.keys())
     ylist = set(ydict.keys())
@@ -718,7 +720,7 @@ def main(
 
     if arp is not None and arp not in ['ip', 'mac', 'ipmac']:
         print("arp flag is INVALID, default to None")
-        arp == None
+        arp == "ip"
         
     go_compare_f(fpath, dfpath, hostnames, arp)
 
@@ -727,6 +729,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="args for diff_sh)")
     parser.add_argument(
         "--arp",
+        default="ip",
         help="File with one command per line (optional; ignored if positional commands are given)"
     )
     args = parser.parse_args()
