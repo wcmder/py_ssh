@@ -268,6 +268,9 @@ def compare_arp_tbl_f (p1, p2, arp):
     xdict = {}
     ydict = {}
 
+    if arp == None:
+        arp = "mac"
+
     if arp.lower() =="mac":
         for linex in p1:
             x = re.search(r'(internet\s+){0,1}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*(\w{4}\.\w{4}\.\w{4})\s+.*', linex, re.IGNORECASE)
@@ -718,10 +721,6 @@ def main(
     dfpath = os.path.join(".","outputs", "DIFF")
     hostnames = get_hostname_f(fpath)
 
-    if arp is not None and arp not in ['ip', 'mac', 'ipmac']:
-        print("arp flag is INVALID, default to None")
-        arp == "ip"
-        
     go_compare_f(fpath, dfpath, hostnames, arp)
 
 
@@ -729,7 +728,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="args for diff_sh)")
     parser.add_argument(
         "--arp",
-        default="ip",
+        default="mac",
         help="File with one command per line (optional; ignored if positional commands are given)"
     )
     args = parser.parse_args()
