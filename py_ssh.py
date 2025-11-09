@@ -36,7 +36,7 @@ DEFAULT_USERNAME = "wder1"
 DEFAULT_PORT = 22
 
 TARGET = ["nipr"]          # default groups to use when none provided
-THREAD = 10                # default concurrency
+THREAD = 20                # default concurrency
 
 COMMANDS = [
     "terminal length 0",
