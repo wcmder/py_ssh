@@ -578,17 +578,16 @@ def compare_bdi_f (p1, p2):
             
             for k in range(1000):
                 n = i+k
-                x1 = re.search(r'.*(\w\w\w\w\.\w\w\w\w\.\w\w\w\w).*', p1[n], re.IGNORECASE)
-                #print(p1[n])
-                if x1:
-                    #print(x1.group(1))
-                    xdict[x.group(1)] = xdict[x.group(1)] + ', ' + x1.group(1)
-                elif p1[n] == '' or p1[n] == '#END' or p1[n][-1] == "#":
-                    #print("--------------------")
+                try:
+                    x1 = re.search(r'.*(\w\w\w\w\.\w\w\w\w\.\w\w\w\w).*', p1[n], re.IGNORECASE)
+                    #print(p1[n])
+                    if x1:
+                        #print(n)
+                        #print(x1.group(1))
+                        xdict[x.group(1)] = xdict[x.group(1)] + ', ' + x1.group(1)
+                except:
                     i = n
-                    #print(xdict)
-                    break
-                
+                    break    
         else:
             i = i+1
 
@@ -604,16 +603,15 @@ def compare_bdi_f (p1, p2):
             
             for k in range(1000):
                 n = j+k
-                x1 = re.search(r'.*(\w\w\w\w\.\w\w\w\w\.\w\w\w\w).*', p2[n], re.IGNORECASE)
-                #print(p2[n])
-                if x1:
-                    #print(x1.group(1))
-                    ydict[x.group(1)] = ydict[x.group(1)] + ', ' + x1.group(1)
-                    
-                elif p2[n] == '' or p2[n] == '#END' or p2[n][-1] == "#":
-                    #print("--------------------")
+                try:
+                    x1 = re.search(r'.*(\w\w\w\w\.\w\w\w\w\.\w\w\w\w).*', p2[n], re.IGNORECASE)
+                    #print(p2[n])
+                    if x1:
+                        #print(x1.group(1))
+                        ydict[x.group(1)] = ydict[x.group(1)] + ', ' + x1.group(1)
+                        
+                except:
                     j = n
-                    #print(ydict)
                     break
                 
         else:
