@@ -110,7 +110,7 @@ def get_dict_f(pfile, header_i):
 
 
 # compare 
-def compare_f(d1, d2, arp):
+def compare_f(d1, d2, arp, peer):
     #keys = [k for k,v in d1.items()]
     diff = []
     #print(keys)
@@ -127,7 +127,7 @@ def compare_f(d1, d2, arp):
         # pre to post
         if len(d1[k])>2:
             tdiff.append(k)
-            tdiff = tdiff + (output_check_f(k, d1[k], d2[k], arp))
+            tdiff = tdiff + (output_check_f(k, d1[k], d2[k], arp, peer))
 
         if (len(tdiff))>1:
             tdiff.insert(1, '!   BEFORE')
@@ -140,7 +140,7 @@ def compare_f(d1, d2, arp):
         # only check those with more than 2 lines
         # post to pre
         if len(d2[k])>2:
-            tdiff= tdiff + (output_check_f(k, d2[k], d1[k], arp))
+            tdiff= tdiff + (output_check_f(k, d2[k], d1[k], arp, peer))
             #print(tdiff)
         if (len(tdiff))>=1:
             if k not in diff:
@@ -162,7 +162,7 @@ def compare_f(d1, d2, arp):
     
 # this take only one element of the dict
 # k is the dict k, p1 or p2 is the value of dict
-def output_check_f(key, p1, p2, arp):
+def output_check_f(key, p1, p2, arp, peer):
     #print(key)
     rlist = []
 
@@ -207,6 +207,9 @@ def output_check_f(key, p1, p2, arp):
 
     elif "ip route" in key.lower():
         rlist = rlist+(compare_ip_route_f(p1, p2))   
+
+    elif "pa bgp local" in key.lower():
+        rlist = rlist+(compare_pa_bgp_f(p1, p2, peer))
 
     return rlist
 
@@ -661,8 +664,46 @@ def compare_sip_tls_f (p1, p2):
     return rlist
 
 
+def compare_pa_bgp_f (p1, p2, peer):
+    rlist = []
+    xdict = {}
+    ydict = {}
 
-def go_compare_f (fpath, dfpath, hostnames, arp):
+    if peer == None:
+        peer = "yes"
+
+    if peer.lower() =="no":
+        for linex in p1:
+            x = re.search(r'^\s+(\*?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2})\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+.*', linex, re.IGNORECASE)
+            if x:
+                #print(xdict[x.group(1)])
+                xdict[x.group(1)] = x.group(0)
+
+        for liney in p2:
+            y = re.search(r'^\s+(\*?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2})\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+.*', liney, re.IGNORECASE)
+            if y:
+                ydict[y.group(1)] = y.group(0)
+
+    else:  # peer is yes
+        for linex in p1:
+            x = re.search(r'^\s+(\*?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2})\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+.*', linex, re.IGNORECASE)
+            if x:
+                xdict[x.group(0)] = x.group(0)
+
+        for liney in p2:
+            y = re.search(r'^\s+(\*?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2})\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+.*', liney, re.IGNORECASE)
+            if y:
+                ydict[y.group(0)] = y.group(0)
+
+    xlist = set(xdict.keys())
+    ylist = set(ydict.keys())
+
+    for x in xlist-ylist:
+        rlist.append(xdict[x])
+
+    return rlist
+
+def go_compare_f (fpath, dfpath, hostnames, arp, peer):
 
     # delete current diff file
     os.makedirs(dfpath, exist_ok = True)
@@ -688,7 +729,7 @@ def go_compare_f (fpath, dfpath, hostnames, arp):
 
             #for k, v in r1.items():
             #    print(k)
-            diff = compare_f(r1, r2, arp)
+            diff = compare_f(r1, r2, arp, peer)
             if len(diff) > 0:
                 diff.insert(0, each_name+"-DIFF.txt\n\n")
                 print(f'writing diff to file ... {each_name}', end="")
@@ -711,7 +752,8 @@ def go_compare_f (fpath, dfpath, hostnames, arp):
 
 
 def main(
-        arp: Optional[str] = None
+        arp: Optional[str] = None,
+        peer: Optional[str] = None
 ):
     # two compare file with the same hostname automatically
     #paths = '..\\temp\\config\\config-check-result\\'
@@ -719,7 +761,7 @@ def main(
     dfpath = os.path.join(".","outputs", "DIFF")
     hostnames = get_hostname_f(fpath)
 
-    go_compare_f(fpath, dfpath, hostnames, arp)
+    go_compare_f(fpath, dfpath, hostnames, arp, peer)
 
 
 if __name__ == '__main__':
@@ -729,7 +771,14 @@ if __name__ == '__main__':
         default="mac",
         help="File with one command per line (optional; ignored if positional commands are given)"
     )
+    parser.add_argument(
+        "--peer",
+        default="yes",
+        help="File with one command per line (optional; ignored if positional commands are given)"
+    )
     args = parser.parse_args()
+
     main(
         arp=args.arp,
+        peer=args.peer
     )
