@@ -208,7 +208,7 @@ def output_check_f(key, p1, p2, arp, peer):
     elif "ip route" in key.lower():
         rlist = rlist+(compare_ip_route_f(p1, p2))   
 
-    elif "pa bgp local" in key.lower():
+    elif "pa bgp rib" in key.lower():
         rlist = rlist+(compare_pa_bgp_f(p1, p2, peer))
 
     return rlist
