@@ -474,17 +474,21 @@ def compare_bgp_stat_f (p1, p2):
     ydict = {}
     for linex in p1:
         #print(linex)
-        x = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+.*\s+(\w+)', linex, re.IGNORECASE)
+        x = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+.*\s+(\w+)$', linex, re.IGNORECASE)
         if x:
-            xdict[x.group(1)+"-"+x.group(2)] = x.group(0)
-            #print(x.group(1)+"-"+x.group(2))
+            if x.group(2).isdigit() and int(x.group(2)) != 0:
+                xdict[x.group(1)] = x.group(0)
+            else:
+                xdict[x.group(1)+"-"+x.group(2)] = x.group(0)
 
     for liney in p2:
         #print(liney)
-        y = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+.*\s+(\w+)', liney, re.IGNORECASE)
+        y = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+.*\s+(\w+)$', liney, re.IGNORECASE)
         if y:
-            ydict[y.group(1)+'-'+y.group(2)] = y.group(0)
-            #print(y.group(1)+'-'+y.group(2))
+            if y.group(2).isdigit() and int(y.group(2)) != 0:
+                ydict[y.group(1)] = y.group(0)
+            else:
+                ydict[y.group(1)+'-'+y.group(2)] = y.group(0)
 
     xlist = set(xdict.keys())
     ylist = set(ydict.keys())
