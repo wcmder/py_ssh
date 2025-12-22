@@ -424,13 +424,13 @@ def compare_int_des_f (p1, p2):
     xdict = {}
     ydict = {}
     for linex in p1:
-        x = re.search(r'((\w|/)+)\s+(\w+)\s+(\w+)\s+.*', linex, re.IGNORECASE)
+        x = re.search(r'((\w|/|\.)+)\s+(\w+)\s+(\w+)\s+.*', linex, re.IGNORECASE)
         if x:
             xdict[x.group(1)+x.group(3)+x.group(4)] = x.group(0)
 
 
     for liney in p2:
-        y = re.search(r'((\w|/)+)\s+(\w+)\s+(\w+)\s+.*', liney, re.IGNORECASE)
+        y = re.search(r'((\w|/|\.)+)\s+(\w+)\s+(\w+)\s+.*', liney, re.IGNORECASE)
         if y:
             ydict[y.group(1)+y.group(3)+y.group(4)] = y.group(0)
 
