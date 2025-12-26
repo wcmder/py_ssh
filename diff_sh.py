@@ -719,7 +719,7 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer):
         except:
             print("No such file anymore: "+eachdfile)
 
-
+    d = False
     for each_name in hostnames:
 
         pref_name = os.path.join(fpath,each_name+"-pre-status.txt",)
@@ -735,6 +735,7 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer):
             #    print(k)
             diff = compare_f(r1, r2, arp, peer)
             if len(diff) > 0:
+                d = True
                 diff.insert(0, each_name+"-DIFF.txt\n\n")
                 print(f'writing diff to file ... {each_name}', end="")
                 try:
@@ -747,8 +748,8 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer):
             else: 
                 print(f'NO diff ... {each_name}')
     
-    if not os.listdir(dfpath):
-        print("DONE")
+    if not d:
+        print("DONE, no DIFF found")
     else:
         print('DONE at - '+dfpath)
         print('Please see the -DIFF files there\n')
