@@ -27,7 +27,7 @@ import keyring
 print_lock = Lock()
 
 PER_CMD_TIMEOUT = 30.0     # seconds: hard cap per command
-IDLE_QUIET = 4           # seconds: stop when no data arrives for this long
+IDLE_QUIET = 7             # seconds: stop when no data arrives for this long
 SELECT_WAIT = 0.50         # seconds: max wait for readability check
 
 DEFAULT_DEVICES_FILE = (Path(__file__).with_name("device.json") if "__file__" in globals() else Path.cwd() / "device.json")
