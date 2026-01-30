@@ -179,6 +179,9 @@ def _ssh_run_one(
     timeout: int = 20,
     cmd_delay: float = 0.2,
     banner_timeout: int = 15,
+    *,
+    idle_quiet: Optional[float] = None,
+    per_cmd_timeout: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Connect to a device and run commands, returning:
@@ -229,6 +232,10 @@ def _ssh_run_one(
             print(f"[connected] {display}", flush=True)
 
         outs: List[str] = []
+
+        effective_idle_quiet = float(idle_quiet) if idle_quiet is not None else float(IDLE_QUIET)
+        effective_per_cmd_timeout = float(per_cmd_timeout) if per_cmd_timeout is not None else float(PER_CMD_TIMEOUT)
+
         for cmd in commands:
             line = cmd.rstrip("\n")
             if ";" in cmd:
@@ -251,13 +258,13 @@ def _ssh_run_one(
                 # hard timeout?
                 now = time.monotonic()
                 #print(f' cmd timout: {now - start}')
-                if now - start >= PER_CMD_TIMEOUT:
+                if now - start >= effective_per_cmd_timeout:
                     with print_lock:
                         print(f"[timeout] {display} exceeded per cmd timeout {PER_CMD_TIMEOUT}s", flush=True)
                     break
                 # quiet long enough?
                 #print(f'quiet timeout: {now - last_data}' )
-                if now - last_data >= IDLE_QUIET:
+                if now - last_data >= effective_idle_quiet:
                     break
 
                 if os.name == "nt":
@@ -560,6 +567,8 @@ def run_batch(
     append: Optional[str] = None,
     *,
     prompt_if_missing: bool = False,   # library default: no prompt
+    idle_quiet: Optional[float] = None,
+    per_cmd_timeout: Optional[float] = None,
 ) -> dict:
     out_dir = Path(output_dir).expanduser().resolve()
     _ensure_dir(out_dir)
@@ -591,7 +600,7 @@ def run_batch(
     ok = failed = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        fut_to_dev = {pool.submit(_ssh_run_one, d, cmd_list, timeout): d for d in normalized_devices}
+        fut_to_dev = {pool.submit(_ssh_run_one, d, cmd_list, timeout, idle_quiet=idle_quiet, per_cmd_timeout=per_cmd_timeout,): d for d in normalized_devices}
         for fut in as_completed(fut_to_dev):
             res = fut.result()
             results.append(res)
