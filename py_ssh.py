@@ -182,6 +182,7 @@ def _ssh_run_one(
     *,
     idle_quiet: Optional[float] = None,
     per_cmd_timeout: Optional[float] = None,
+    initial_wait: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Connect to a device and run commands, returning:
@@ -230,6 +231,10 @@ def _ssh_run_one(
 
         with print_lock:
             print(f"[connected] {display}", flush=True)
+
+        # Optional pause before sending the first command (helps with devices that print banners slowly)
+        if initial_wait and initial_wait > 0:
+            time.sleep(float(initial_wait))
 
         outs: List[str] = []
 
@@ -569,6 +574,7 @@ def run_batch(
     prompt_if_missing: bool = False,   # library default: no prompt
     idle_quiet: Optional[float] = None,
     per_cmd_timeout: Optional[float] = None,
+    initial_wait: Optional[float] = None,
 ) -> dict:
     out_dir = Path(output_dir).expanduser().resolve()
     _ensure_dir(out_dir)
@@ -600,7 +606,18 @@ def run_batch(
     ok = failed = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        fut_to_dev = {pool.submit(_ssh_run_one, d, cmd_list, timeout, idle_quiet=idle_quiet, per_cmd_timeout=per_cmd_timeout,): d for d in normalized_devices}
+        fut_to_dev = {
+            pool.submit(
+                _ssh_run_one,
+                d,
+                cmd_list,
+                timeout,
+                idle_quiet=idle_quiet,
+                per_cmd_timeout=per_cmd_timeout,
+                initial_wait=initial_wait,
+            ): d
+            for d in normalized_devices
+    }
         for fut in as_completed(fut_to_dev):
             res = fut.result()
             results.append(res)
