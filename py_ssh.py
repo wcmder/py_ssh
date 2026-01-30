@@ -260,7 +260,7 @@ def _ssh_run_one(
                 #print(f' cmd timout: {now - start}')
                 if now - start >= effective_per_cmd_timeout:
                     with print_lock:
-                        print(f"[timeout] {display} exceeded per cmd timeout {PER_CMD_TIMEOUT}s", flush=True)
+                        print(f"[timeout] {display} exceeded per cmd timeout {effective_per_cmd_timeout}s", flush=True)
                     break
                 # quiet long enough?
                 #print(f'quiet timeout: {now - last_data}' )
