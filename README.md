@@ -38,12 +38,12 @@ flags:
 
 #-- py_ssh --
 use parameters example
-python3 py_ssh.py --devices dmss.json --append pre-status --device-group dc --commands-file cmd_dc.txt
-python3 py_ssh.py --devices dmss.json --append pre-status --device-group 3850 --commands-file cmd_3850.txt
-python3 py_ssh.py --devices dmss.json --append pre-status --device-group voip --commands-file cmd_voip.txt
-python3 py_ssh.py --devices dmss.json --append pre-status --device-group router --commands-file cmd_router.txt
-python3 py_ssh.py --devices dmss.json --append pre-status --device-group campus --commands-file cmd_campus.txt
-python3 py_ssh.py --devices dmss.json --device-group router 3850 voip --commands-file cmd_archive.txt
+python py_ssh.py --devices dmss.json --device-group dc --commands-file cmd_dc.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-group 3850 --commands-file cmd_3850.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-group voip --commands-file cmd_voip.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-group router --commands-file cmd_router.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-group campus --commands-file cmd_campus.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-group router 3850 voip --commands-file cmd_archive.txt --append pre-status
 python ./py_ssh.py --devices dmss.json --device-group critical --commands-file ./cmd_critical.txt --append pre-status
 
 
