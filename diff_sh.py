@@ -40,6 +40,7 @@ def get_hostname_f(path):
     
     print("found these host file -")
     print(hostname)
+    print('\n')
     return hostname
 
 
@@ -720,6 +721,8 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer):
             print("No such file anymore: "+eachdfile)
 
     d = False
+
+    print("Summary:")
     for each_name in hostnames:
 
         pref_name = os.path.join(fpath,each_name+"-pre-status.txt",)
@@ -737,21 +740,21 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer):
             if len(diff) > 0:
                 d = True
                 diff.insert(0, each_name+"-DIFF.txt\n\n")
-                print(f'writing diff to file ... {each_name}', end="")
+                print(f'  - YES diff ... {each_name:25} ... writing diff to file', end="")
                 try:
                     diff_f = open(os.path.join(fpath,"DIFF",each_name+"-DIFF.txt",), 'w')
                     diff_f.writelines("%s\n" % l for l in diff)
-                    print(' ... DONE')
+                    print(' ... done')
                 except:
                     print("Can't write file: "+os.path.join(fpath,"DIFF",each_name+"-DIFF.txt"))
                     sys.exit(0)
             else: 
-                print(f'NO diff ... {each_name}')
+                print(f'  - NO  diff ... {each_name}')
     
     if not d:
-        print("DONE, no DIFF found")
+        print("\nDONE, no DIFF found")
     else:
-        print('DONE at - '+dfpath)
+        print('\nDONE at - '+dfpath)
         print('Please see the -DIFF files there\n')
 
 
