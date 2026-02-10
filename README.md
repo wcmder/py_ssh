@@ -45,7 +45,7 @@ python py_ssh.py --devices dmss.json --device-group router --commands-file cmd_r
 python py_ssh.py --devices dmss.json --device-group campus --commands-file cmd_campus.txt --append pre-status
 python py_ssh.py --devices dmss.json --device-group router 3850 voip --commands-file cmd_archive.txt --append pre-status
 python ./py_ssh.py --devices dmss.json --device-group critical --commands-file ./cmd_critical.txt --append pre-status
-python py_ssh.py --devices devices.json --device-group sa21 --commands-file cmd_eigrp.txt --keyring-service none --default-username derwc@state.gov
+python py_ssh.py --devices devices.json --device-group sa21 --commands-file cmd_eigrp.txt --keyring-service none --default-username derwc@state.gov --append pre-status
 
 
 
