@@ -694,8 +694,8 @@ def main(
         time.sleep(60)
 
     if diff:
-        print("================ DIFF SH ================")
-        print("diff flag on, calling diff_sh.py")
+        print("================ DIFF sh ================")
+        print("[info] diff flag is on, calling diff_sh.py")
         subprocess.run([sys.executable, "diff_sh.py"], check=True)
 
 

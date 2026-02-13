@@ -23,12 +23,12 @@ def get_hostname_f(path):
     try:
         files = os.listdir(path)
     except:
-        print('Can not find directory: '+path)
+        print('[error] Can not find directory: '+path)
         sys.exit(0)
 
     if len(files) < 2:
-        print ('Need at least two files in directory' +path)
-        print ('Exsiting!!!')
+        print ('[error] Need at least two files in directory' +path)
+        print ('[error] Exsiting!!!')
         sys.exit(0)
 
     print('\n')
@@ -38,7 +38,7 @@ def get_hostname_f(path):
         if 'status.txt' in files[n]:
             hostname.add((re.split('-\w{3,4}-status.txt', files[n])[0]))
     
-    print("found these host file -")
+    print("[info] Found these host file -")
     print(hostname)
     print('\n')
     return hostname
@@ -49,13 +49,13 @@ def read_f(pre, post):
     try:
         pref = open(pre, 'r')
     except:
-        print ('can not find: ', end="")
+        print ('[error] can not find: ', end="")
         print (pre)
         return 0
     try:
         postf = open(post, 'r')
     except:
-        print ('can not find: ', end="")
+        print ('[error] can not find: ', end="")
         print (post)
         return 0
     else:

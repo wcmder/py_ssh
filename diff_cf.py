@@ -33,24 +33,24 @@ def main():
     filex_c = [line.rstrip()+"\n" for line in file1 if not line.startswith('!') and not line == '\n']
     filey_c = [line.rstrip()+"\n" for line in file2 if not line.startswith('!') and not line == '\n']
 
-    print('Comparing...')
+    print('[info] Comparing...')
     extract_cm.extract_f(filex_c, filey_c, file1_u)
 
     if file1_u.tell() == 0:
         #file1_u.write('NO DIFFERENCE FOUND')
-        print(f"no diff found --> {Path(file1.name).name} from {Path(file2.name).name}")
+        print(f"[info] no diff found --> {Path(file1.name).name} from {Path(file2.name).name}")
         file1_u.close()
         os.remove(file1_u.name)
 
     else:
         file1_u.close()
 
-    print('Comparing...')
+    print('[info] Comparing...')
     extract_cm.extract_f(filey_c, filex_c, file2_u)
 
     if file2_u.tell() == 0:
         #file2_u.write('NO DIFFERENCE FOUND')
-        print(f"no diff found --> {Path(file2.name).name} from {Path(file1.name).name}")
+        print(f"[info] no diff found --> {Path(file2.name).name} from {Path(file1.name).name}")
         file2_u.close()
         os.remove(file2_u.name)
 
