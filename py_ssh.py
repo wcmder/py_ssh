@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Iterable, List, Optional, Union
+import subprocess
 
 # ---------- Optional deps ----------
 import paramiko
@@ -657,6 +658,7 @@ def main(
     default_username: Optional[str] = None,
     keyring_service: Optional[str] = None,
     append: Optional[str] = None,
+    diff: Optional[bool] = False,
 ) -> None:
     out_dir = Path(output_dir or "./outputs").expanduser().resolve()
     arch_dir = Path(archive_dir).expanduser().resolve() if archive_dir else (out_dir / "archives")
@@ -690,6 +692,11 @@ def main(
         if not l:
             break
         time.sleep(60)
+
+    if diff:
+        print("================ DIFF SH ================")
+        print("diff flag on, calling diff_sh.py")
+        subprocess.run([sys.executable, "diff_sh.py"], check=True)
 
 
 if __name__ == "__main__":
@@ -746,6 +753,8 @@ if __name__ == "__main__":
     # IMPORTANT: append is a LABEL string (not a bool)
     parser.add_argument("--append", required=False, metavar="LABEL",
                         help="Append output to result file named LABEL.txt instead of timestamped files")
+    
+    parser.add_argument("-d", "--diff", action="store_true", help="call diff_sh")
 
     args = parser.parse_args()
 
@@ -781,6 +790,7 @@ if __name__ == "__main__":
             default_username=args.default_username,
             keyring_service=args.keyring_service,
             append=args.append,
+            diff=args.diff
         )
     except KeyboardInterrupt:
         with print_lock:
