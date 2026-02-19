@@ -20,49 +20,54 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser(description="DIFF FOR CONFIG")
     parser.add_argument("-f", "--force", action="store_true", help="Force to ignore hostname check")
-    args = parser.parse_args()    
+    parser.add_argument("-m", "--match", action="store_true", help="Force to match all files, skip prompt")
+    args = parser.parse_args()
 
-    inputfiles = input_f(args.force)
-    file1 = inputfiles[0]
-    file2 = inputfiles[1]
-    file1_u = inputfiles[2]
-    file2_u = inputfiles[3]
-    paths = inputfiles[4]
+    jobs = input_f(match=args.match, force=args.force)
+    for file1, file2, file1_u, file2_u, paths in jobs:
+        # run your compare logic here per host
 
-    # remove all the line starts with ! and empty lines
-    filex_c = [line.rstrip()+"\n" for line in file1 if not line.startswith('!') and not line == '\n']
-    filey_c = [line.rstrip()+"\n" for line in file2 if not line.startswith('!') and not line == '\n']
+        #inputfiles = input_f(args.force)
+        #file1 = inputfiles[0]
+        #file2 = inputfiles[1]
+        #file1_u = inputfiles[2]
+        #file2_u = inputfiles[3]
+        #paths = inputfiles[4]
 
-    print('Comparing...')
-    extract_cm.extract_f(filex_c, filey_c, file1_u)
+        # remove all the line starts with ! and empty lines
+        filex_c = [line.rstrip()+"\n" for line in file1 if not line.startswith('!') and not line == '\n']
+        filey_c = [line.rstrip()+"\n" for line in file2 if not line.startswith('!') and not line == '\n']
 
-    if file1_u.tell() == 0:
-        #file1_u.write('NO DIFFERENCE FOUND')
-        print(f"no diff found --> {Path(file1.name).name} from {Path(file2.name).name}")
-        file1_u.close()
-        os.remove(file1_u.name)
+        print('Comparing...')
+        extract_cm.extract_f(filex_c, filey_c, file1_u)
 
-    else:
-        file1_u.close()
+        if file1_u.tell() == 0:
+            #file1_u.write('NO DIFFERENCE FOUND')
+            print(f"no diff found --> {Path(file1.name).name} from {Path(file2.name).name}")
+            file1_u.close()
+            os.remove(file1_u.name)
 
-    print('Comparing...')
-    extract_cm.extract_f(filey_c, filex_c, file2_u)
+        else:
+            file1_u.close()
 
-    if file2_u.tell() == 0:
-        #file2_u.write('NO DIFFERENCE FOUND')
-        print(f"no diff found --> {Path(file2.name).name} from {Path(file1.name).name}")
-        file2_u.close()
-        os.remove(file2_u.name)
+        print('Comparing...')
+        extract_cm.extract_f(filey_c, filex_c, file2_u)
 
-    else:
-        file2_u.close()
-    
-    file1.close()
-    file2.close()
+        if file2_u.tell() == 0:
+            #file2_u.write('NO DIFFERENCE FOUND')
+            print(f"no diff found --> {Path(file2.name).name} from {Path(file1.name).name}")
+            file2_u.close()
+            os.remove(file2_u.name)
 
-    # windows only
-    #if 'win' in sys.platform:
-    #    os.system('start explorer.exe '+paths)
+        else:
+            file2_u.close()
+        
+        file1.close()
+        file2.close()
+
+        # windows only
+        #if 'win' in sys.platform:
+        #    os.system('start explorer.exe '+paths)
 
     print('Finished')
 
