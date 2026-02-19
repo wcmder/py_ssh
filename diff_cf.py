@@ -45,12 +45,12 @@ def main():
 
         if file1_u.tell() == 0:
             #file1_u.write('NO DIFFERENCE FOUND')
-            print(f"[info] no diff found --> {Path(file1.name).name} from {Path(file2.name).name}")
+            print(f"[info] NO diff  --> {Path(file1.name).name} from {Path(file2.name).name}")
             file1_u.close()
             os.remove(file1_u.name)
 
         else:
-            print(f"[info] diff found .. --> {Path(file1.name).name} from {Path(file2.name).name}")
+            print(f"[info] YES diff --> {Path(file1.name).name} from {Path(file2.name).name}")
             file1_u.close()
         
         if args.match:
@@ -60,12 +60,12 @@ def main():
 
         if file2_u.tell() == 0:
             #file2_u.write('NO DIFFERENCE FOUND')
-            print(f"[info] no diff found --> {Path(file2.name).name} from {Path(file1.name).name}")
+            print(f"[info] NO diff  --> {Path(file2.name).name} from {Path(file1.name).name}")
             file2_u.close()
             os.remove(file2_u.name)
 
         else:
-            print(f"[info] diff found .. --> {Path(file2.name).name} from {Path(file1.name).name}")
+            print(f"[info] YES diff --> {Path(file2.name).name} from {Path(file1.name).name}")
             file2_u.close()
         
         file1.close()
