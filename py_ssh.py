@@ -542,16 +542,16 @@ def _print_summary(summary: dict) -> None:
 
     if results:
         print("\n")
-        print(f"  {'Host/Target:':25} {'Status:':15} {'File:'}")
+        print(f"  {'Host/Target:':30} {'Status:':15} {'File:'}")
         for r in results:
             host = r.get("host", "unknown")
             success = r.get("ok", False)
             if success:
                 outfile = r.get("outfile") or ""
-                print(f"  {host:25} {'OK':15} {outfile}")
+                print(f"  {host:30} {'OK':15} {outfile}")
             else:
                 err = (r.get("error") or "").strip()
-                print(f"  {host:25} {'FAIL':15} {err}")
+                print(f"  {host:30} {'FAIL':15} {err}")
         print("\n")
 
 
