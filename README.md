@@ -33,6 +33,7 @@ flags:
 for diff running config
 flags:
 1. -f force, ignore hostname check
+2. -m match, auto select all files to check, no prompt
 
 
 
