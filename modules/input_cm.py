@@ -31,13 +31,13 @@ def called_by():
 
     return name
 
+import os
+import sys
+import re
+
 _TS_RE = re.compile(r"^(?P<date>\d{8})-(?P<sec>\d+)$")
 
 def _split_host_ts(filename: str):
-    """
-    'host-name-something_yyyymmdd-seconds.txt' -> (host='host-name-something', ts='yyyymmdd-seconds')
-    If format is unexpected, ts=None.
-    """
     base = filename[:-4] if filename.lower().endswith(".txt") else filename
     if "_" not in base:
         return base, None
@@ -45,17 +45,11 @@ def _split_host_ts(filename: str):
     return host, ts
 
 def _ts_sort_key(filename: str, path_dir: str):
-    """
-    Sort by parsed (yyyymmdd, seconds) descending.
-    Fallback to file mtime if unparsable.
-    """
     _, ts = _split_host_ts(filename)
     if ts:
         m = _TS_RE.match(ts)
         if m:
-            # tuple sorts naturally: higher date, then higher seconds
             return (int(m.group("date")), int(m.group("sec")))
-    # fallback: use mtime as (0, mtime)
     try:
         return (0, int(os.path.getmtime(os.path.join(path_dir, filename))))
     except Exception:
@@ -68,7 +62,6 @@ def input_f(force=False, match=False):
     if caller == 'cf':
         title = ', for Cisco or Juiper configurations only'
         checkname = 'y'
-
     if caller == 'sh':
         title = ', for show command results only'
         checkname = 'y'
@@ -90,21 +83,21 @@ def input_f(force=False, match=False):
 
     print('\n')
     print('Files available for comparsion' + title + ': \n')
-    for number in list(range(len(files))):
+    for number in range(len(files)):
         tempalte1 = '{0:<4} -- {1}'
         print(tempalte1.format(number + 1, files[number]))
     print('\n')
 
+    jobs = []
+
     # -------------------------
-    # -m / match mode: compare per-host (two newest timestamps)
+    # -m / match mode
     # -------------------------
     if match:
         groups = {}
         for fn in files:
-            host, ts = _split_host_ts(fn)
+            host, _ = _split_host_ts(fn)
             groups.setdefault(host, []).append(fn)
-
-        all_jobs = []
 
         for host, host_files in sorted(groups.items()):
             if len(host_files) < 2:
@@ -116,14 +109,6 @@ def input_f(force=False, match=False):
                 reverse=True
             )
             fn1, fn2 = host_files_sorted[0], host_files_sorted[1]
-
-            # sanity: enforce same-host rule unless force=True
-            if checkname == 'y' and force is False:
-                h1, _ = _split_host_ts(fn1)
-                h2, _ = _split_host_ts(fn2)
-                if h1 != h2:
-                    print(f'The two files are not from the same host, can not compare them! ({fn1} vs {fn2})')
-                    sys.exit(0)
 
             file1_n = fn1[:-4] + '.u.txt'
             file2_n = fn2[:-4] + '.u.txt'
@@ -147,16 +132,16 @@ def input_f(force=False, match=False):
             print(f"  PREV   : {fn2}")
             print()
 
-            all_jobs.append((file1, file2, file1_u, file2_u, paths))
+            jobs.append((file1, file2, file1_u, file2_u, paths))
 
-        if not all_jobs:
+        if not jobs:
             print("'-m' was used but no host had at least two files to compare.")
             sys.exit(0)
 
-        return all_jobs
+        return jobs
 
     # -------------------------
-    # Existing interactive mode
+    # Interactive mode (but still returns jobs=[one_tuple])
     # -------------------------
     while True:
         xstr = ''
@@ -169,12 +154,11 @@ def input_f(force=False, match=False):
             print('Invalid input, please try again')
             continue
         else:
-            x = x - 1
+            x -= 1
             if x not in range(len(files)):
                 print('Out of range selection, please try again')
                 continue
-            else:
-                break
+            break
 
     while True:
         ystr = ''
@@ -187,30 +171,29 @@ def input_f(force=False, match=False):
             print('Invalid input, please try again')
             continue
         else:
-            y = y - 1
+            y -= 1
             if y not in range(len(files)):
                 print('Out of range selection, please try again')
                 continue
             if y == x:
                 print('Same file selected, please try again')
                 continue
-            else:
-                break
+            break
 
-    # UPDATED host comparison: split on last '_' (host-name-something)
-    if checkname == 'y' and force == False:
+    if checkname == 'y' and force is False:
         hx, _ = _split_host_ts(files[x])
         hy, _ = _split_host_ts(files[y])
         if hx != hy:
             print('The two files are not from the same host, can not compare them!')
             sys.exit(0)
 
-    file1_n = files[x][:-4] + '.u.txt'
-    file2_n = files[y][:-4] + '.u.txt'
+    fn1, fn2 = files[x], files[y]
+    file1_n = fn1[:-4] + '.u.txt'
+    file2_n = fn2[:-4] + '.u.txt'
 
     try:
-        file1 = open(os.path.join(path, files[x]), 'r')
-        file2 = open(os.path.join(path, files[y]), 'r')
+        file1 = open(os.path.join(path, fn1), 'r')
+        file2 = open(os.path.join(path, fn2), 'r')
     except:
         print('Failed opening one of the original files, exiting')
         sys.exit(0)
@@ -222,4 +205,5 @@ def input_f(force=False, match=False):
         print('Failed opening one of the new files, exiting')
         sys.exit(0)
 
-    return (file1, file2, file1_u, file2_u, paths)
+    jobs.append((file1, file2, file1_u, file2_u, paths))
+    return jobs
