@@ -542,7 +542,7 @@ def _print_summary(summary: dict) -> None:
 
     if results:
         print("\n")
-        print(f"  {'Host:':25} {'Status:':15} {'File:'}")
+        print(f"  {'Host/Target:':25} {'Status:':15} {'File:'}")
         for r in results:
             host = r.get("host", "unknown")
             success = r.get("ok", False)
