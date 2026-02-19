@@ -24,6 +24,7 @@ def main():
     args = parser.parse_args()
 
     jobs = input_f(match=args.match, force=args.force)
+    print('[INFO] Comparing...\n')
     for file1, file2, file1_u, file2_u, paths in jobs:
         # run your compare logic here per host
 
@@ -38,34 +39,28 @@ def main():
         filex_c = [line.rstrip()+"\n" for line in file1 if not line.startswith('!') and not line == '\n']
         filey_c = [line.rstrip()+"\n" for line in file2 if not line.startswith('!') and not line == '\n']
 
-        if not args.match:
-            print('[info] Comparing...')
-
         extract_cm.extract_f(filex_c, filey_c, file1_u)
 
         if file1_u.tell() == 0:
             #file1_u.write('NO DIFFERENCE FOUND')
-            print(f"[info]  NO diff --> {Path(file1.name).name} from {Path(file2.name).name}")
+            print(f"[INFO]  NO diff --> {Path(file1.name).name} from {Path(file2.name).name}")
             file1_u.close()
             os.remove(file1_u.name)
 
         else:
-            print(f"[info] YES diff --> {Path(file1.name).name} from {Path(file2.name).name}")
+            print(f"[INFO] YES diff --> {Path(file1.name).name} from {Path(file2.name).name}")
             file1_u.close()
         
-        if not args.match:
-            print('[info] Comparing...')
-
         extract_cm.extract_f(filey_c, filex_c, file2_u)
 
         if file2_u.tell() == 0:
             #file2_u.write('NO DIFFERENCE FOUND')
-            print(f"[info]  NO diff --> {Path(file2.name).name} from {Path(file1.name).name}")
+            print(f"[INFO]  NO diff --> {Path(file2.name).name} from {Path(file1.name).name}")
             file2_u.close()
             os.remove(file2_u.name)
 
         else:
-            print(f"[info] YES diff --> {Path(file2.name).name} from {Path(file1.name).name}")
+            print(f"[INFO] YES diff --> {Path(file2.name).name} from {Path(file1.name).name}")
             file2_u.close()
         
         file1.close()
