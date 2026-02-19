@@ -38,7 +38,7 @@ def main():
         filex_c = [line.rstrip()+"\n" for line in file1 if not line.startswith('!') and not line == '\n']
         filey_c = [line.rstrip()+"\n" for line in file2 if not line.startswith('!') and not line == '\n']
 
-        if args.match:
+        if not args.match:
             print('[info] Comparing...')
 
         extract_cm.extract_f(filex_c, filey_c, file1_u)
@@ -53,7 +53,7 @@ def main():
             print(f"[info] YES diff --> {Path(file1.name).name} from {Path(file2.name).name}")
             file1_u.close()
         
-        if args.match:
+        if not args.match:
             print('[info] Comparing...')
 
         extract_cm.extract_f(filey_c, filex_c, file2_u)
