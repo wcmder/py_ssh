@@ -70,7 +70,7 @@ def main():
         #if 'win' in sys.platform:
         #    os.system('start explorer.exe '+paths)
 
-    print('\nDONE')
+    print('\nDONE\n')
 
 if __name__ == '__main__':
     main()
