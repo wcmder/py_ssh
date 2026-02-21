@@ -36,8 +36,8 @@ def main():
         #paths = inputfiles[4]
 
         # remove all the line starts with ! and empty lines
-        filex_c = [line.rstrip()+"\n" for line in file1 if not line.startswith('!') and not line == '\n']
-        filey_c = [line.rstrip()+"\n" for line in file2 if not line.startswith('!') and not line == '\n']
+        filex_c = [line.rstrip() + "\n" for line in file1 if not line.lstrip().startswith(('!', 'Current configuration')) and line.strip() != ""]
+        filey_c = [line.rstrip() + "\n" for line in file2 if not line.lstrip().startswith(('!', 'Current configuration')) and line.strip() != ""]
 
         extract_cm.extract_f(filex_c, filey_c, file1_u)
 
