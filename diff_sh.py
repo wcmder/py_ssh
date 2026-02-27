@@ -752,7 +752,7 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer):
                 print(f'  - NO  diff ... {each_name}')
     
     if not d:
-        print("\nDONE, no DIFF found")
+        print("\nDONE, no DIFF found\n")
     else:
         print('\nDONE at - '+dfpath)
         print('Please see the -DIFF files there\n')
