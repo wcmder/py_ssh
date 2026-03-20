@@ -718,13 +718,23 @@ if __name__ == "__main__":
         ),
     )
 
-    # commands: positional list; or --commands-file for one-per-line file
+    # commands: --commands list, positional list, or --commands-file for one-per-line file
     parser.add_argument(
-        "--commands-file",
-        help="File with one command per line (optional; ignored if positional commands are given)"
+        "--commands",
+        dest="commands_flag",
+        nargs="+",
+        help=(
+            "One or more commands to run. "
+            "Quote commands that contain spaces or pipes. "
+            "Takes precedence over positional commands."
+        ),
     )
     parser.add_argument(
-        "commands",
+        "--commands-file",
+        help="File with one command per line (optional; ignored if CLI commands are given)"
+    )
+    parser.add_argument(
+        "commands_positional",
         nargs="*",
         help=(
             "Commands to run (space-separated; quote if they contain spaces/pipes). "
@@ -773,12 +783,14 @@ if __name__ == "__main__":
             raise SystemExit("--prefix must contain letters/numbers or -/_")
         args.per_host_prefix = safe
 
+    cli_commands = args.commands_flag if args.commands_flag else args.commands_positional
+
     try:
         # pass ALL args explicitly
         main(
             a=args.a,
             l=args.l,
-            commands=args.commands if args.commands else None,
+            commands=cli_commands if cli_commands else None,
             commands_file=args.commands_file,
             devices=args.devices,
             output_dir=args.output_dir,
