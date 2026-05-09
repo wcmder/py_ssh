@@ -217,23 +217,34 @@ def output_check_f(key, p1, p2, arp, peer):
 
 def compare_ip_route_f (p1, p2):
     rlist = []
-    xdict = {}
-    ydict = {}
-    for linex in p1:
-        x = re.search(r'^(\s+){0,1}(\w{1,2}\s+){1,2}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(/\d{0,2}){0,1}.*', linex, re.IGNORECASE)
-        if x:
-            if x.group(4) is not None:
-                xdict[x.group(3)+x.group(4)] = x.group(0)
-            else:
-                xdict[x.group(3)] = x.group(0)
+    route_re = re.compile(
+        r'^\s*(?:\*?\s*)?(?:\w{1,2}\*?\s+){1,2}'
+        r'(\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?).*',
+        re.IGNORECASE
+    )
+    via_re = re.compile(r'\bvia\s+(\d{1,3}(?:\.\d{1,3}){3})\b', re.IGNORECASE)
 
-    for liney in p2:
-        y = re.search(r'^(\s+){0,1}(\w{1,2}\s+){1,2}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(/\d{0,2}){0,1}.*', liney, re.IGNORECASE)
-        if y:
-            if y.group(4) is not None:
-                ydict[y.group(3)+y.group(4)] = y.group(0)
-            else:
-                ydict[y.group(3)] = y.group(0)
+    def get_route_dict_f(lines):
+        route_dict = {}
+        current_prefix = None
+
+        for line in lines:
+            route = route_re.search(line)
+            if route:
+                current_prefix = route.group(1)
+            elif current_prefix is None:
+                continue
+
+            via = via_re.search(line)
+            if via:
+                route_dict[current_prefix+" via "+via.group(1)] = line.rstrip('\n')
+            elif route:
+                route_dict[current_prefix] = line.rstrip('\n')
+
+        return route_dict
+
+    xdict = get_route_dict_f(p1)
+    ydict = get_route_dict_f(p2)
 
     
     xlist = set(xdict.keys())
