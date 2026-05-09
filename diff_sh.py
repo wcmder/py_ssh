@@ -241,7 +241,10 @@ def compare_ip_route_f (p1, p2, route_no_next_hop=False):
                 if route:
                     route_dict[current_prefix] = line.rstrip('\n')
             elif via:
-                route_dict[current_prefix+" via "+via.group(1)] = line.rstrip('\n')
+                if route:
+                    route_dict[current_prefix+" via "+via.group(1)] = line.rstrip('\n')
+                else:
+                    route_dict[current_prefix+" via "+via.group(1)] = current_prefix+" "+line.strip()
             elif route:
                 route_dict[current_prefix] = line.rstrip('\n')
 
