@@ -36,7 +36,7 @@ def get_hostname_f(path):
     hostname = set()
     for n in list(range(len(files))):
         if 'status.txt' in files[n]:
-            hostname.add((re.split('-\w{3,4}-status.txt', files[n])[0]))
+            hostname.add((re.split(r'-\w{3,4}-status.txt', files[n])[0]))
     
     print("[info] Found these host file -")
     print(hostname)
@@ -111,7 +111,7 @@ def get_dict_f(pfile, header_i):
 
 
 # compare 
-def compare_f(d1, d2, arp, peer):
+def compare_f(d1, d2, arp, peer, route_no_next_hop=False):
     #keys = [k for k,v in d1.items()]
     diff = []
     #print(keys)
@@ -128,7 +128,7 @@ def compare_f(d1, d2, arp, peer):
         # pre to post
         if len(d1[k])>2:
             tdiff.append(k)
-            tdiff = tdiff + (output_check_f(k, d1[k], d2[k], arp, peer))
+            tdiff = tdiff + (output_check_f(k, d1[k], d2[k], arp, peer, route_no_next_hop))
 
         if (len(tdiff))>1:
             tdiff.insert(1, '!   BEFORE')
@@ -141,7 +141,7 @@ def compare_f(d1, d2, arp, peer):
         # only check those with more than 2 lines
         # post to pre
         if len(d2[k])>2:
-            tdiff= tdiff + (output_check_f(k, d2[k], d1[k], arp, peer))
+            tdiff= tdiff + (output_check_f(k, d2[k], d1[k], arp, peer, route_no_next_hop))
             #print(tdiff)
         if (len(tdiff))>=1:
             if k not in diff:
@@ -163,7 +163,7 @@ def compare_f(d1, d2, arp, peer):
     
 # this take only one element of the dict
 # k is the dict k, p1 or p2 is the value of dict
-def output_check_f(key, p1, p2, arp, peer):
+def output_check_f(key, p1, p2, arp, peer, route_no_next_hop=False):
     #print(key)
     rlist = []
 
@@ -207,7 +207,7 @@ def output_check_f(key, p1, p2, arp, peer):
         rlist = rlist+(compare_ospf_db_f(p1, p2))
 
     elif "ip route" in key.lower():
-        rlist = rlist+(compare_ip_route_f(p1, p2))   
+        rlist = rlist+(compare_ip_route_f(p1, p2, route_no_next_hop))   
 
     elif "pa bgp rib" in key.lower():
         rlist = rlist+(compare_pa_bgp_f(p1, p2, peer))
@@ -215,10 +215,10 @@ def output_check_f(key, p1, p2, arp, peer):
     return rlist
 
 
-def compare_ip_route_f (p1, p2):
+def compare_ip_route_f (p1, p2, route_no_next_hop=False):
     rlist = []
     route_re = re.compile(
-        r'^\s*(?:\*?\s*)?(?:\w{1,2}\*?\s+){1,2}'
+        r'^\s*(?:\*?\s*)?((?:\w{1,2}\*?\s+){1,2})'
         r'(\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?).*',
         re.IGNORECASE
     )
@@ -231,12 +231,16 @@ def compare_ip_route_f (p1, p2):
         for line in lines:
             route = route_re.search(line)
             if route:
-                current_prefix = route.group(1)
+                route_code = " ".join(route.group(1).split())
+                current_prefix = route_code+" "+route.group(2)
             elif current_prefix is None:
                 continue
 
             via = via_re.search(line)
-            if via:
+            if route_no_next_hop:
+                if route:
+                    route_dict[current_prefix] = line.rstrip('\n')
+            elif via:
                 route_dict[current_prefix+" via "+via.group(1)] = line.rstrip('\n')
             elif route:
                 route_dict[current_prefix] = line.rstrip('\n')
@@ -719,7 +723,7 @@ def compare_pa_bgp_f (p1, p2, peer):
 
     return rlist
 
-def go_compare_f (fpath, dfpath, hostnames, arp, peer):
+def go_compare_f (fpath, dfpath, hostnames, arp, peer, route_no_next_hop=False):
 
     # delete current diff file
     os.makedirs(dfpath, exist_ok = True)
@@ -747,7 +751,7 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer):
 
             #for k, v in r1.items():
             #    print(k)
-            diff = compare_f(r1, r2, arp, peer)
+            diff = compare_f(r1, r2, arp, peer, route_no_next_hop)
             if len(diff) > 0:
                 d = True
                 diff.insert(0, each_name+"-DIFF.txt\n\n")
@@ -772,7 +776,8 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer):
 
 def main(
         arp: Optional[str] = None,
-        peer: Optional[str] = None
+        peer: Optional[str] = None,
+        route_no_next_hop: bool = False
 ):
     # two compare file with the same hostname automatically
     #paths = '..\\temp\\config\\config-check-result\\'
@@ -780,7 +785,7 @@ def main(
     dfpath = os.path.join(".","outputs", "DIFF")
     hostnames = get_hostname_f(fpath)
 
-    go_compare_f(fpath, dfpath, hostnames, arp, peer)
+    go_compare_f(fpath, dfpath, hostnames, arp, peer, route_no_next_hop)
 
 
 if __name__ == '__main__':
@@ -795,9 +800,15 @@ if __name__ == '__main__':
         default="yes",
         help="File with one command per line (optional; ignored if positional commands are given)"
     )
+    parser.add_argument(
+        "--route-no-next-hop",
+        action="store_true",
+        help="Compare ip route output by route code(s)/prefix only and ignore next-hop changes"
+    )
     args = parser.parse_args()
 
     main(
         arp=args.arp,
-        peer=args.peer
+        peer=args.peer,
+        route_no_next_hop=args.route_no_next_hop
     )

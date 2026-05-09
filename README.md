@@ -27,6 +27,7 @@ flags:
    'ip'    - check against IP address (for static IP use case, with possible MAC changes in VMs)
    'mac'   - check against MAC address (for dhcp endpoint use case, this is the default behavior)
    'ipmac' - check against both IP/MAC, both must be the same to be matched
+2. --route-no-next-hop - for ip route checks, compare only the route code(s)/prefix and ignore next-hop changes, e.g. B 10.1.1.1/32 or O IA 10.1.1.1/32
 
 
 #--- diff_cf ---
