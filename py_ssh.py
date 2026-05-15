@@ -36,6 +36,18 @@ DEFAULT_SERVICE = "py_ssh"
 DEFAULT_USERNAME = "wder1"
 DEFAULT_PORT = 22
 
+ANSI_ESCAPE_RE = re.compile(
+    r"""
+    \x1B
+    (?:
+        \[[0-?]*[ -/]*[@-~]      # CSI sequences, e.g. ESC[K, ESC[2J
+      | \][^\x07]*(?:\x07|\x1B\\) # OSC sequences
+      | [@-Z\\-_]                 # single-character escape sequences
+    )
+    """,
+    re.VERBOSE,
+)
+
 TARGET = ["nipr"]          # default groups to use when none provided
 THREAD = 20                # default concurrency
 
@@ -111,6 +123,23 @@ def _get_password_from_keyring(service: str, username: str) -> Optional[str]:
         return keyring.get_password(service, username)  # type: ignore[attr-defined]
     except Exception:
         return None
+
+
+def _clean_terminal_output(text: str) -> str:
+    """
+    Remove terminal-control bytes commonly returned by network-device shells.
+    This is especially useful for devices that emit cursor/line clear sequences.
+    """
+    text = ANSI_ESCAPE_RE.sub("", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Interpret simple backspace edits instead of preserving raw ^H characters.
+    while "\b" in text:
+        new_text = re.sub(r"[^\n]\b", "", text)
+        if new_text == text:
+            break
+        text = new_text
+    return text.replace("\b", "")
 
 
 # ============= Credential Prefill (main thread) =============
@@ -226,7 +255,7 @@ def _ssh_run_one(
             look_for_keys=False,
             allow_agent=False,
         )
-        chan = ssh.invoke_shell()
+        chan = ssh.invoke_shell(term="dumb", width=240, height=1000)
         chan.settimeout(timeout)
         #time.sleep(5)                   # wait for MOD
 
@@ -276,7 +305,7 @@ def _ssh_run_one(
                 if os.name == "nt":
                     # windows 
                     if chan.recv_ready():
-                        data = chan.recv(65535).decode("utf-8", errors="ignore")
+                        data = _clean_terminal_output(chan.recv(65535).decode("utf-8", errors="ignore"))
                         if data:
                             chunks.append(data)
                             last_data = time.monotonic()
@@ -289,7 +318,7 @@ def _ssh_run_one(
                     if r:
                         try:
                             if chan.recv_ready():
-                                data = chan.recv(65535).decode("utf-8", errors="ignore")
+                                data = _clean_terminal_output(chan.recv(65535).decode("utf-8", errors="ignore"))
                                 if data:
                                     chunks.append(data)
                                     last_data = time.monotonic()
