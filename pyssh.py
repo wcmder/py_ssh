@@ -161,6 +161,7 @@ def _ssh_run_one(
     default_device_type: Optional[str] = None,
     idle_quiet: Optional[float] = None,
     per_cmd_timeout: Optional[float] = None,
+    initial_wait: Optional[float] = None,
 ) -> Dict[str, Any]:
     host = device.get("connect_host") or device.get("host") or device.get("ip")
     hostname = device.get("hostname") or device.get("display_name") or host
@@ -205,6 +206,9 @@ def _ssh_run_one(
 
         with print_lock:
             print(f"[connected] {display}", flush=True)
+
+        if initial_wait and initial_wait > 0:
+            time.sleep(float(initial_wait))
 
         outs: List[str] = []
         effective_idle_quiet = float(idle_quiet) if idle_quiet is not None else IDLE_QUIET
@@ -438,6 +442,7 @@ def run_batch(
     prompt_if_missing: bool = False,
     idle_quiet: Optional[float] = None,
     per_cmd_timeout: Optional[float] = None,
+    initial_wait: Optional[float] = None,
 ) -> dict:
     out_dir = Path(output_dir).expanduser().resolve()
     _ensure_dir(out_dir)
@@ -468,6 +473,7 @@ def run_batch(
                 default_device_type=default_device_type,
                 idle_quiet=idle_quiet,
                 per_cmd_timeout=per_cmd_timeout,
+                initial_wait=initial_wait,
             ): d
             for d in normalized_devices
         }
@@ -508,6 +514,7 @@ def main(
     append: Optional[str] = None,
     diff: Optional[bool] = False,
     default_device_type: Optional[str] = None,
+    initial_wait: Optional[float] = None,
 ) -> None:
     out_dir = Path(output_dir or "./outputs").expanduser().resolve()
     arch_dir = Path(archive_dir).expanduser().resolve() if archive_dir else (out_dir / "archives")
@@ -531,6 +538,7 @@ def main(
                 keyring_service=keyring_service,
                 append=append,
                 default_device_type=default_device_type,
+                initial_wait=initial_wait,
                 prompt_if_missing=True,
             )
             _print_summary(batch)
@@ -577,6 +585,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device-type", default=None, help=f"Netmiko device_type fallback (default: {DEFAULT_DEVICE_TYPE})")
     parser.add_argument("--idle-quiet", type=float, default=None, metavar="SECONDS")
     parser.add_argument("--per-cmd-timeout", type=float, default=None, metavar="SECONDS")
+    parser.add_argument("--initial-wait", type=float, default=None, metavar="SECONDS")
     parser.add_argument("-d", "--diff", action="store_true", help="call diff_sh")
     return parser
 
@@ -619,6 +628,7 @@ if __name__ == "__main__":
             append=args.append,
             diff=args.diff,
             default_device_type=args.device_type,
+            initial_wait=args.initial_wait,
         )
     except KeyboardInterrupt:
         with print_lock:
