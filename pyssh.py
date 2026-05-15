@@ -222,7 +222,7 @@ def _ssh_run_one(
                 last_read=effective_idle_quiet,
                 read_timeout=effective_per_cmd_timeout,
             )
-            outs.append(f"\n################################################ {label}\n{output}")
+            outs.append(f"\n################################################ {label} ({cmd})\n{output}")
             if output and not output.endswith("\n"):
                 outs.append("\n")
 
