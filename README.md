@@ -1,4 +1,4 @@
-#--- new env ---
+## -- new env ---
 1. build a env in the code dir
    python3 -m venv env (note: evn*/ dir is not tracked in git)
    source env/bin/activate
@@ -15,12 +15,13 @@
    deactivate
 
 
-#-- keyring (Mac and Win) --
+## -- keyring (Mac and Win) --
 1. setup kerying secret in command line - set password
    python3 -c 'import keyring; keyring.set_password("service_name", "user_name", "password")'
    python3 -c 'import keyring; svc='svc_name'; user="xxx"; pwd="xxx"; keyring.set_password(svc, 'username', user); keyring.set_password(svc, 'password', pwd)''
 
-#--- diff_sh ---
+
+## -- diff_sh ---
 for diff show outputs
 flags:
 1. --arp arp table check, with options (None if default when not used)
@@ -30,7 +31,7 @@ flags:
 2. --route-no-next-hop - for ip route checks, compare only the route code(s)/prefix and ignore next-hop changes, e.g. B 10.1.1.1/32 or O IA 10.1.1.1/32
 
 
-#--- diff_cf ---
+## -- diff_cf ---
 for diff running config
 flags:
 1. -f force, ignore hostname check
@@ -38,7 +39,7 @@ flags:
 
 
 
-#-- py_ssh --
+## -- py_ssh --
 use parameters example
 python py_ssh.py --devices dmss.json --device-group dc --commands-file cmd_dc.txt --append pre-status
 python py_ssh.py --devices dmss.json --device-group 3850 --commands-file cmd_3850.txt --append pre-status
@@ -49,6 +50,22 @@ python py_ssh.py --devices dmss.json --device-group router 3850 voip --commands-
 python py_ssh.py --devices dmss.json --device-group critical --commands-file cmd_critical.txt --append post-status -d
 python py_ssh.py --devices devices.json --device-group sa21 --commands-file cmd_eigrp.txt --keyring-service none --default-username derwc@state.gov --append pre-status
 
+
+## Current supported DIFF key words -
+"ip arp" 
+"mac address-table"
+"cisco interface status - sh ip int bri"
+"arista interface status - sh int status"
+"interface description"
+"access-session"
+"bgp summary"
+"lisp status"
+"portchannel"      
+"isdn status"
+"bridge-domain"
+"sip tls"
+"ospf database"
+"ip route"
 
 
 ### AIR GAPPED 
