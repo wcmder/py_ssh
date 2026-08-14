@@ -17,6 +17,23 @@ import re
 import glob
 import argparse
 
+
+def resolve_cli_folder(folder, default_outputs=False):
+    outputs_root = os.path.abspath(os.path.join(".", "outputs"))
+    if not folder:
+        return outputs_root if default_outputs else None
+    if os.path.isabs(folder):
+        return os.path.abspath(os.path.expanduser(folder))
+
+    expanded = os.path.expanduser(folder)
+    if expanded == "outputs" or expanded.startswith("outputs" + os.sep):
+        return os.path.abspath(expanded)
+
+    resolved = os.path.abspath(os.path.join(outputs_root, expanded))
+    if os.path.commonpath((outputs_root, resolved)) != outputs_root:
+        raise ValueError("folder must stay under ./outputs")
+    return resolved
+
 # get a set all file names under the given path
 def get_hostname_f(path):
 
@@ -860,17 +877,23 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--out",
-        default="./outputs",
+        default=None,
         metavar="DIR",
-        help="Folder where the DIFF subfolder is written; also the input folder unless --in is used"
+        help="Folder under ./outputs where DIFF is written; also the input folder unless --in is used"
     )
     parser.add_argument(
         "--in",
         dest="input_dir",
         metavar="DIR",
-        help="Folder containing pre-status and post-status files (default: the --out folder)"
+        help="Folder under ./outputs containing pre-status and post-status files (default: the --out folder)"
     )
     args = parser.parse_args()
+
+    try:
+        args.out = resolve_cli_folder(args.out, default_outputs=True)
+        args.input_dir = resolve_cli_folder(args.input_dir)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     main(
         arp=args.arp,

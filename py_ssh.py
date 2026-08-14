@@ -65,6 +65,25 @@ def _ensure_dir(p: Path) -> None:
     p.mkdir(parents=True, exist_ok=True)
 
 
+def _resolve_cli_output_folder(value: Optional[Path]) -> Path:
+    outputs_root = Path("./outputs").resolve()
+    if value is None:
+        return outputs_root
+
+    folder = value.expanduser()
+    if folder.is_absolute():
+        return folder.resolve()
+    if folder.parts and folder.parts[0] == "outputs":
+        return folder.resolve()
+
+    resolved = (outputs_root / folder).resolve()
+    try:
+        resolved.relative_to(outputs_root)
+    except ValueError as exc:
+        raise ValueError("--out folder must stay under ./outputs") from exc
+    return resolved
+
+
 def _timestamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -588,9 +607,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output-dir", "--out",
         dest="output_dir",
         type=Path,
-        default=Path("./outputs"),
+        default=None,
         metavar="DIR",
-        help="Folder for output files; created if it does not exist (default: ./outputs)",
+        help="Folder under ./outputs; created if it does not exist (default: ./outputs)",
     )
     parser.add_argument("--archive-dir", type=Path, metavar="DIR")
     parser.add_argument("--max-workers", type=int, default=THREAD, metavar="N")
@@ -613,7 +632,10 @@ if __name__ == "__main__":
     parser = _build_parser()
     args = parser.parse_args()
 
-    args.output_dir = args.output_dir.expanduser().resolve()
+    try:
+        args.output_dir = _resolve_cli_output_folder(args.output_dir)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     arch_dir = args.archive_dir.expanduser().resolve() if args.archive_dir else (args.output_dir / "archives")
 
     if args.max_workers < 1:
