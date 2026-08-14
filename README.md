@@ -41,14 +41,26 @@ flags:
 
 ## -- py_ssh --
 use parameters example
-python py_ssh.py --devices dmss.json --device-group dc --commands-file cmd_dc.txt --append pre-status
-python py_ssh.py --devices dmss.json --device-group 3850 --commands-file cmd_3850.txt --append pre-status
-python py_ssh.py --devices dmss.json --device-group voip --commands-file cmd_voip.txt --append pre-status
-python py_ssh.py --devices dmss.json --device-group router --commands-file cmd_router.txt --append pre-status
-python py_ssh.py --devices dmss.json --device-group campus --commands-file cmd_campus.txt --append pre-status
-python py_ssh.py --devices dmss.json --device-group router 3850 voip --commands-file cmd_archive.txt --append pre-status
-python py_ssh.py --devices dmss.json --device-group critical --commands-file cmd_critical.txt --append post-status -d
-python py_ssh.py --devices devices.json --device-group sa21 --commands-file cmd_eigrp.txt --keyring-service none --default-username derwc@state.gov --append pre-status
+python py_ssh.py --devices dmss.json --device-groups dc --commands-file cmd_dc.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-groups 3850 --commands-file cmd_3850.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-groups voip --commands-file cmd_voip.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-groups router --commands-file cmd_router.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-groups campus --commands-file cmd_campus.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-groups router 3850 voip --commands-file cmd_archive.txt --append pre-status
+python py_ssh.py --devices dmss.json --device-groups critical --commands-file cmd_critical.txt --append post-status -d
+python py_ssh.py --devices devices.json --device-groups sa21 --commands-file cmd_eigrp.txt --keyring-service none --default-username derwc@state.gov --append pre-status
+
+### Diff after collection
+
+Use `-d` (or `--diff`) to run `diff_sh.py` automatically after the SSH command
+collection finishes and the output files are saved. This is useful on a
+post-status run to compare the newly collected output with the pre-status output.
+
+Example:
+
+```bash
+python py_ssh.py --devices dmss.json --device-groups critical --commands-file cmd_critical.txt --append post-status -d
+```
 
 
 ## Current supported DIFF key words -
