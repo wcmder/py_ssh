@@ -53,6 +53,10 @@ python py_ssh.py --devices dmss.json --device-groups router 3850 voip --commands
 python py_ssh.py --devices dmss.json --device-groups critical --commands-file cmd_critical.txt --append post-status -d
 python py_ssh.py --devices devices.json --device-groups sa21 --commands-file cmd_eigrp.txt --keyring-service none --default-username derwc@state.gov --append pre-status
 
+Command-file block ID format:
+- `command; id` writes `################################################ id (command)`
+- `command` writes `################################################ (command)`
+
 ### Diff after collection
 
 Use `-d` (or `--diff`) to run `diff_sh.py` automatically after the SSH command

@@ -142,7 +142,13 @@ def _split_command(raw_command: str) -> tuple[str, str]:
     if ";" in line:
         command, label = line.split(";", 1)
         return command.strip(), label.strip()
-    return line.strip(), line.strip()
+    return line.strip(), ""
+
+
+def _format_block_id(command: str, label: str) -> str:
+    if label:
+        return f"{label} ({command})"
+    return f"({command})"
 
 
 def _device_type_from(device: Dict[str, Any], default_device_type: Optional[str]) -> str:
@@ -218,6 +224,7 @@ def _ssh_run_one(
             cmd, label = _split_command(raw_cmd)
             if not cmd:
                 continue
+            block_id = _format_block_id(cmd, label)
 
             output = conn.send_command_timing(
                 cmd,
@@ -226,7 +233,7 @@ def _ssh_run_one(
                 last_read=effective_idle_quiet,
                 read_timeout=effective_per_cmd_timeout,
             )
-            outs.append(f"\n################################################ {label} ({cmd})\n{output}")
+            outs.append(f"\n################################################ {block_id}\n{output}")
             if output and not output.endswith("\n"):
                 outs.append("\n")
 
