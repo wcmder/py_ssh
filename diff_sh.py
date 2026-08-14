@@ -798,6 +798,7 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer, route_no_next_hop=False, 
             print("No such file anymore: "+eachdfile)
 
     d = False
+    had_error = False
 
     print("Summary:")
     for each_name in hostnames:
@@ -825,10 +826,14 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer, route_no_next_hop=False, 
                 except:
                     print("Can't write file: "+os.path.join(dfpath, each_name+"-DIFF.txt"))
                     sys.exit(0)
-            else: 
+            else:
                 print(f'  - NO  diff ... {each_name}')
-    
-    if not d:
+        else:
+            had_error = True
+
+    if had_error:
+        print("\nDONE, see error message\n")
+    elif not d:
         print("\nDONE, no DIFF found\n")
     else:
         print('\nDONE at - '+dfpath)
