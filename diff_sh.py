@@ -802,11 +802,11 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer, route_no_next_hop=False, 
                 diff.insert(0, each_name+"-DIFF.txt\n\n")
                 print(f'  - YES diff ... {each_name:25} ... writing diff to file', end="")
                 try:
-                    diff_f = open(os.path.join(fpath,"DIFF",each_name+"-DIFF.txt",), 'w')
+                    diff_f = open(os.path.join(dfpath, each_name+"-DIFF.txt"), 'w')
                     diff_f.writelines("%s\n" % l for l in diff)
                     print(' ... done')
                 except:
-                    print("Can't write file: "+os.path.join(fpath,"DIFF",each_name+"-DIFF.txt"))
+                    print("Can't write file: "+os.path.join(dfpath, each_name+"-DIFF.txt"))
                     sys.exit(0)
             else: 
                 print(f'  - NO  diff ... {each_name}')
@@ -823,12 +823,14 @@ def main(
         arp: Optional[str] = None,
         peer: Optional[str] = None,
         route_no_next_hop: bool = False,
-        no_nat_port: bool = False
+        no_nat_port: bool = False,
+        output_dir: str = "./outputs",
+        input_dir: Optional[str] = None
 ):
     # two compare file with the same hostname automatically
     #paths = '..\\temp\\config\\config-check-result\\'
-    fpath = os.path.join(".","outputs")
-    dfpath = os.path.join(".","outputs", "DIFF")
+    fpath = input_dir or output_dir
+    dfpath = os.path.join(output_dir, "DIFF")
     hostnames = get_hostname_f(fpath)
 
     go_compare_f(fpath, dfpath, hostnames, arp, peer, route_no_next_hop, no_nat_port)
@@ -856,11 +858,25 @@ if __name__ == '__main__':
         action="store_true",
         help="Compare ip nat translations while ignoring ports in all four address columns"
     )
+    parser.add_argument(
+        "--out",
+        default="./outputs",
+        metavar="DIR",
+        help="Folder where the DIFF subfolder is written; also the input folder unless --in is used"
+    )
+    parser.add_argument(
+        "--in",
+        dest="input_dir",
+        metavar="DIR",
+        help="Folder containing pre-status and post-status files (default: the --out folder)"
+    )
     args = parser.parse_args()
 
     main(
         arp=args.arp,
         peer=args.peer,
         route_no_next_hop=args.route_no_next_hop,
-        no_nat_port=args.no_nat_port
+        no_nat_port=args.no_nat_port,
+        output_dir=args.out,
+        input_dir=args.input_dir
     )

@@ -562,7 +562,7 @@ def main(
     if diff:
         print("================ DIFF sh ================")
         print("[info] diff flag is on, calling diff_sh.py")
-        diff_command = [sys.executable, "diff_sh.py"]
+        diff_command = [sys.executable, "diff_sh.py", "--out", str(out_dir)]
         if no_nat_port:
             diff_command.append("--no-nat-port")
         subprocess.run(diff_command, check=True)
@@ -584,7 +584,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--commands", dest="commands_flag", nargs="+", help="One or more commands to run")
     parser.add_argument("--commands-file", help="File with one command per line")
     parser.add_argument("commands_positional", nargs="*", help="Commands to run")
-    parser.add_argument("--output-dir", type=Path, default=Path("./outputs"), metavar="DIR")
+    parser.add_argument(
+        "--output-dir", "--out",
+        dest="output_dir",
+        type=Path,
+        default=Path("./outputs"),
+        metavar="DIR",
+        help="Folder for output files; created if it does not exist (default: ./outputs)",
+    )
     parser.add_argument("--archive-dir", type=Path, metavar="DIR")
     parser.add_argument("--max-workers", type=int, default=THREAD, metavar="N")
     parser.add_argument("--timeout", type=int, default=20, metavar="SECONDS")

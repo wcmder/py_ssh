@@ -30,8 +30,16 @@ flags:
    'ipmac' - check against both IP/MAC, both must be the same to be matched
 2. --route-no-next-hop - for ip route checks, compare only the route code(s)/prefix and ignore next-hop changes, e.g. B 10.1.1.1/32 or O IA 10.1.1.1/32
 3. --no-nat-port - for ip nat translations checks, ignore ports in the inside global, inside local, outside local, and outside global columns
+4. --in DIR - read pre-status and post-status files from DIR. By default, input is read from the --out folder
+5. --out DIR - write diff files under DIR/DIFF
 
 Example: `python diff_sh.py --no-nat-port`
+
+Read status files from one folder and write differences to another:
+
+```bash
+python diff_sh.py --in collected-status --out comparison-results
+```
 
 
 ## -- diff_cf ---
@@ -56,6 +64,14 @@ python py_ssh.py --devices devices.json --device-groups sa21 --commands-file cmd
 Command-file block ID format:
 - `command; id` writes `################################################ id (command)`
 - `command` writes `################################################ (command)`
+
+Use `--out FOLDERNAME` to save results in a specific folder. The folder is
+created automatically if it does not exist. `--output-dir` is the equivalent
+long-form option.
+
+```bash
+python py_ssh.py --devices dmss.json --device-groups critical --commands-file cmd_critical.txt --out critical-results
+```
 
 ### Diff after collection
 
