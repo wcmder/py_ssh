@@ -236,7 +236,6 @@ def _ssh_run_one(
             time.sleep(float(initial_wait))
 
         outs: List[str] = []
-        effective_idle_quiet = float(idle_quiet) if idle_quiet is not None else IDLE_QUIET
         effective_per_cmd_timeout = float(per_cmd_timeout) if per_cmd_timeout is not None else PER_CMD_TIMEOUT
 
         for raw_cmd in commands:
@@ -245,12 +244,14 @@ def _ssh_run_one(
                 continue
             block_id = _format_block_id(cmd, label)
 
-            output = conn.send_command_timing(
+            # A prompt is a reliable command boundary. A quiet-period boundary
+            # can let delayed output spill into the following command's block.
+            output = conn.send_command(
                 cmd,
                 strip_command=True,
                 strip_prompt=True,
-                last_read=effective_idle_quiet,
                 read_timeout=effective_per_cmd_timeout,
+                cmd_verify=False,
             )
             outs.append(f"\n################################################ {block_id}\n{output}")
             if output and not output.endswith("\n"):
@@ -620,7 +621,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--keyring-service", default=DEFAULT_SERVICE, metavar="SERVICE")
     parser.add_argument("--append", required=False, metavar="LABEL")
     parser.add_argument("--device-type", default=None, help=f"Netmiko device_type fallback (default: {DEFAULT_DEVICE_TYPE})")
-    parser.add_argument("--idle-quiet", type=float, default=None, metavar="SECONDS")
+    parser.add_argument(
+        "--idle-quiet",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="Deprecated compatibility option; commands now wait for the device prompt",
+    )
     parser.add_argument("--per-cmd-timeout", type=float, default=None, metavar="SECONDS")
     parser.add_argument("--initial-wait", type=float, default=None, metavar="SECONDS")
     parser.add_argument("-d", "--diff", action="store_true", help="call diff_sh")

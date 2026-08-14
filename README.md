@@ -62,8 +62,14 @@ python py_ssh.py --devices dmss.json --device-groups critical --commands-file cm
 python py_ssh.py --devices devices.json --device-groups sa21 --commands-file cmd_eigrp.txt --keyring-service none --default-username derwc@state.gov --append pre-status
 
 Command-file block ID format:
+
 - `command; id` writes `################################################ id (command)`
 - `command` writes `################################################ (command)`
+
+Each command waits for the device prompt before the next command is sent. If a
+response is delayed by packet loss, it remains in its original command block
+instead of being collected under the following block. Use
+`--per-cmd-timeout SECONDS` to allow more time for slow or lossy connections.
 
 Use `--out FOLDERNAME` to save results in `outputs/FOLDERNAME`. The folder is
 created automatically if it does not exist. `--output-dir` is the equivalent
