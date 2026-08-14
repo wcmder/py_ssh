@@ -513,6 +513,7 @@ def main(
     keyring_service: Optional[str] = None,
     append: Optional[str] = None,
     diff: Optional[bool] = False,
+    no_nat_port: bool = False,
     default_device_type: Optional[str] = None,
     initial_wait: Optional[float] = None,
 ) -> None:
@@ -554,7 +555,10 @@ def main(
     if diff:
         print("================ DIFF sh ================")
         print("[info] diff flag is on, calling diff_sh.py")
-        subprocess.run([sys.executable, "diff_sh.py"], check=True)
+        diff_command = [sys.executable, "diff_sh.py"]
+        if no_nat_port:
+            diff_command.append("--no-nat-port")
+        subprocess.run(diff_command, check=True)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -587,6 +591,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--per-cmd-timeout", type=float, default=None, metavar="SECONDS")
     parser.add_argument("--initial-wait", type=float, default=None, metavar="SECONDS")
     parser.add_argument("-d", "--diff", action="store_true", help="call diff_sh")
+    parser.add_argument("--no-nat-port", action="store_true", help="Ignore NAT ports when running diff_sh with -d")
     return parser
 
 
@@ -627,6 +632,7 @@ if __name__ == "__main__":
             keyring_service=args.keyring_service,
             append=args.append,
             diff=args.diff,
+            no_nat_port=args.no_nat_port,
             default_device_type=args.device_type,
             initial_wait=args.initial_wait,
         )

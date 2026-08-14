@@ -111,7 +111,7 @@ def get_dict_f(pfile, header_i):
 
 
 # compare 
-def compare_f(d1, d2, arp, peer, route_no_next_hop=False):
+def compare_f(d1, d2, arp, peer, route_no_next_hop=False, no_nat_port=False):
     #keys = [k for k,v in d1.items()]
     diff = []
     #print(keys)
@@ -124,11 +124,15 @@ def compare_f(d1, d2, arp, peer, route_no_next_hop=False):
         #print(type(d2[k]))
         tdiff = []
 
-        # only check those with more than 2 lines
+        # NAT output can contain only a column header and one translation.
+        enough_before_output = len(d1[k]) > 2 or "ip nat translations" in k.lower()
+        enough_after_output = len(d2[k]) > 2 or "ip nat translations" in k.lower()
+
+        # only check those with more than 2 lines (or any NAT block)
         # pre to post
-        if len(d1[k])>2:
+        if enough_before_output:
             tdiff.append(k)
-            tdiff = tdiff + (output_check_f(k, d1[k], d2[k], arp, peer, route_no_next_hop))
+            tdiff = tdiff + (output_check_f(k, d1[k], d2[k], arp, peer, route_no_next_hop, no_nat_port))
 
         if (len(tdiff))>1:
             tdiff.insert(1, '!   BEFORE')
@@ -138,10 +142,10 @@ def compare_f(d1, d2, arp, peer, route_no_next_hop=False):
         
         tdiff = []
 
-        # only check those with more than 2 lines
+        # only check those with more than 2 lines (or any NAT block)
         # post to pre
-        if len(d2[k])>2:
-            tdiff= tdiff + (output_check_f(k, d2[k], d1[k], arp, peer, route_no_next_hop))
+        if enough_after_output:
+            tdiff= tdiff + (output_check_f(k, d2[k], d1[k], arp, peer, route_no_next_hop, no_nat_port))
             #print(tdiff)
         if (len(tdiff))>=1:
             if k not in diff:
@@ -163,7 +167,7 @@ def compare_f(d1, d2, arp, peer, route_no_next_hop=False):
     
 # this take only one element of the dict
 # k is the dict k, p1 or p2 is the value of dict
-def output_check_f(key, p1, p2, arp, peer, route_no_next_hop=False):
+def output_check_f(key, p1, p2, arp, peer, route_no_next_hop=False, no_nat_port=False):
     #print(key)
     rlist = []
 
@@ -209,10 +213,48 @@ def output_check_f(key, p1, p2, arp, peer, route_no_next_hop=False):
     elif "ip route" in key.lower():
         rlist = rlist+(compare_ip_route_f(p1, p2, route_no_next_hop))   
 
+    elif "ip nat translations" in key.lower():
+        rlist = rlist+(compare_ip_nat_trx(p1, p2, no_nat_port))
+
     elif "pa bgp rib" in key.lower():
         rlist = rlist+(compare_pa_bgp_f(p1, p2, peer))
 
     return rlist
+
+
+def compare_ip_nat_trx(p1, p2, no_nat_port=False):
+    """Return NAT translations present in p1 but not p2.
+
+    Expected columns are protocol, inside global, inside local, outside local,
+    and outside global. Each address column may be an IPv4 address or an
+    IPv4:port value. With no_nat_port enabled, only the address portion of all
+    four NAT address columns is used for comparison.
+    """
+    endpoint = r'\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?'
+    nat_re = re.compile(
+        rf'^\s*([a-z][a-z0-9_-]*)\s+({endpoint})\s+({endpoint})\s+({endpoint})\s+({endpoint})\s*$',
+        re.IGNORECASE
+    )
+
+    def get_nat_dict(lines):
+        translations = {}
+        for line in lines:
+            match = nat_re.match(line)
+            if not match:
+                continue
+
+            protocol = match.group(1).lower()
+            addresses = list(match.groups()[1:])
+            if no_nat_port:
+                addresses = [address.rsplit(':', 1)[0] for address in addresses]
+
+            key = (protocol, *addresses)
+            translations[key] = line.rstrip('\n')
+        return translations
+
+    xdict = get_nat_dict(p1)
+    ydict = get_nat_dict(p2)
+    return [line for key, line in xdict.items() if key not in ydict]
 
 
 def compare_ip_route_f (p1, p2, route_no_next_hop=False):
@@ -726,7 +768,7 @@ def compare_pa_bgp_f (p1, p2, peer):
 
     return rlist
 
-def go_compare_f (fpath, dfpath, hostnames, arp, peer, route_no_next_hop=False):
+def go_compare_f (fpath, dfpath, hostnames, arp, peer, route_no_next_hop=False, no_nat_port=False):
 
     # delete current diff file
     os.makedirs(dfpath, exist_ok = True)
@@ -754,7 +796,7 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer, route_no_next_hop=False):
 
             #for k, v in r1.items():
             #    print(k)
-            diff = compare_f(r1, r2, arp, peer, route_no_next_hop)
+            diff = compare_f(r1, r2, arp, peer, route_no_next_hop, no_nat_port)
             if len(diff) > 0:
                 d = True
                 diff.insert(0, each_name+"-DIFF.txt\n\n")
@@ -780,7 +822,8 @@ def go_compare_f (fpath, dfpath, hostnames, arp, peer, route_no_next_hop=False):
 def main(
         arp: Optional[str] = None,
         peer: Optional[str] = None,
-        route_no_next_hop: bool = False
+        route_no_next_hop: bool = False,
+        no_nat_port: bool = False
 ):
     # two compare file with the same hostname automatically
     #paths = '..\\temp\\config\\config-check-result\\'
@@ -788,7 +831,7 @@ def main(
     dfpath = os.path.join(".","outputs", "DIFF")
     hostnames = get_hostname_f(fpath)
 
-    go_compare_f(fpath, dfpath, hostnames, arp, peer, route_no_next_hop)
+    go_compare_f(fpath, dfpath, hostnames, arp, peer, route_no_next_hop, no_nat_port)
 
 
 if __name__ == '__main__':
@@ -808,10 +851,16 @@ if __name__ == '__main__':
         action="store_true",
         help="Compare ip route output by route code(s)/prefix only and ignore next-hop changes"
     )
+    parser.add_argument(
+        "--no-nat-port",
+        action="store_true",
+        help="Compare ip nat translations while ignoring ports in all four address columns"
+    )
     args = parser.parse_args()
 
     main(
         arp=args.arp,
         peer=args.peer,
-        route_no_next_hop=args.route_no_next_hop
+        route_no_next_hop=args.route_no_next_hop,
+        no_nat_port=args.no_nat_port
     )

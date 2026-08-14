@@ -29,6 +29,9 @@ flags:
    'mac'   - check against MAC address (for dhcp endpoint use case, this is the default behavior)
    'ipmac' - check against both IP/MAC, both must be the same to be matched
 2. --route-no-next-hop - for ip route checks, compare only the route code(s)/prefix and ignore next-hop changes, e.g. B 10.1.1.1/32 or O IA 10.1.1.1/32
+3. --no-nat-port - for ip nat translations checks, ignore ports in the inside global, inside local, outside local, and outside global columns
+
+Example: `python diff_sh.py --no-nat-port`
 
 
 ## -- diff_cf ---
@@ -62,6 +65,12 @@ Example:
 python py_ssh.py --devices dmss.json --device-groups critical --commands-file cmd_critical.txt --append post-status -d
 ```
 
+For NAT comparisons that should ignore ports, add `--no-nat-port` with `-d`:
+
+```bash
+python py_ssh.py --devices dmss.json --device-groups critical --commands-file cmd_critical.txt --append post-status -d --no-nat-port
+```
+
 
 ## Current supported DIFF key words -
 "ip arp" 
@@ -78,6 +87,7 @@ python py_ssh.py --devices dmss.json --device-groups critical --commands-file cm
 "sip tls"
 "ospf database"
 "ip route"
+"ip nat translations"
 
 
 ### AIR GAPPED 
