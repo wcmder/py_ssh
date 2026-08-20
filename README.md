@@ -58,7 +58,7 @@ python py_ssh.py --devices dmss.json --device-groups voip --commands-file cmd_vo
 python py_ssh.py --devices dmss.json --device-groups router --commands-file cmd_router.txt --append pre-status
 python py_ssh.py --devices dmss.json --device-groups campus --commands-file cmd_campus.txt --append pre-status
 python py_ssh.py --devices dmss.json --device-groups router 3850 voip --commands-file cmd_archive.txt --append pre-status
-python py_ssh.py --devices dmss.json --device-groups critical --commands-file cmd_critical.txt --append post-status -d
+python py_ssh.py --devices dmss.json --device-groups critical --commands-file cmd_critical.txt --out critical --per-cmd-timeout 60 --append post-status -d
 python py_ssh.py --devices devices.json --device-groups sa21 --commands-file cmd_eigrp.txt --keyring-service none --default-username derwc@state.gov --append pre-status
 
 Command-file block ID format:
