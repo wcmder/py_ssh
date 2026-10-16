@@ -135,7 +135,15 @@ def compare_f(d1, d2, arp, peer, route_no_next_hop=False, no_nat_port=False):
 
     # k is the the orignal line, also the key in dict
 
-    for k in d1.keys():
+    for k in dict.fromkeys((*d1, *d2)):
+        if k not in d1 or k not in d2:
+            diff.extend([k, '!   BEFORE'])
+            diff.extend(d1[k] if k in d1 else ['no such output'])
+            diff.extend(['\n', '!   AFTER'])
+            diff.extend(d2[k] if k in d2 else ['no such output'])
+            diff.append('\n\n\n')
+            continue
+
         #print(k)
         #print(type(d1[k]))
         #print(type(d2[k]))
