@@ -1,3 +1,26 @@
+# Network configuration and command-output tools
+
+Collect network device configurations and command output over SSH, then compare saved files to review changes.
+
+| Script | What it does |
+| --- | --- |
+| `py_ssh.py` | Connects to network devices over SSH using Netmiko, runs commands such as configuration or status commands, and saves the output per device. Supports device groups, command files, and custom output folders. |
+| `diff_sh.py` | Compares saved before/after show-command output using command-specific checks for interfaces, ARP, MAC tables, routing, BGP, NAT, and more. Writes per-device reports with `!   BEFORE` and `!   AFTER` sections; a missing command block is reported as `no such output`. |
+| `diff_cf.py` | Compares saved running configurations and reports differences in both directions, ignoring blank lines, `!` comments, and `Current configuration` lines. Supports automatic file matching and an option to skip hostname checks. |
+
+A typical workflow is to collect a baseline with `py_ssh.py`, collect again after a change, and compare the saved results with `diff_sh.py` for command output or `diff_cf.py` for configurations. Use `py_ssh.py -d` to run the show-output comparison automatically after collection.
+
+For example, collect command output before and after a change:
+
+```bash
+python py_ssh.py --devices devices.json --device-groups routers --commands-file commands.txt --append pre-status
+python py_ssh.py --devices devices.json --device-groups routers --commands-file commands.txt --append post-status -d
+```
+
+By default, `diff_sh.py` reads status files from `./outputs` and writes reports under `./outputs/DIFF`. Its options let you choose ARP matching behavior, ignore route next-hop or NAT port changes, and use separate input and output folders.
+
+See the sections below for setup, script options, and more examples.
+
 ## -- new env ---
 1. build a env in the code dir
    python3 -m venv env (note: evn*/ dir is not tracked in git)
