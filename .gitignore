@@ -53,3 +53,7 @@ env*/
 device.json
 *.xlsx
 
+# Keep only the sample command file in version control
+cmd_*.txt
+!cmd_sample.txt
+
