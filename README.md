@@ -102,7 +102,38 @@ individual device when needed; otherwise, the script uses `--device-type`,
 or `cisco_ios` by default. The nested group format with a `devices` list and
 group defaults is also supported.
 
-use parameters example
+### Supported command-line flags
+
+| Flag | Description |
+| --- | --- |
+| `-h`, `--help` | Show command-line usage and available options. |
+| `--devices TARGET [TARGET ...]` | Device IPs/hostnames or JSON/text device-list files. Defaults to `devices.json`, then `device.json`. |
+| `--device-groups GROUP [GROUP ...]` | Select groups from a JSON device file. Defaults to the configured `TARGET` list (`nipr`). |
+| `--device-type TYPE` | Fallback Netmiko platform, default `cisco_ios`. Device or group settings take precedence. |
+| `--commands "COMMAND" ["COMMAND" ...]` | Commands to run. Quote each command containing spaces. Takes precedence over positional commands and the command file. |
+| `--commands-file FILE` | Read commands from a text file, one per line; blank lines and lines beginning with `#` are ignored. Used when no commands are supplied directly. |
+| `--out DIR`, `--output-dir DIR` | Save results under `./outputs/DIR`, creating the folder if needed. Default: `./outputs`. |
+| `--append LABEL` | Name output files `<hostname>-<LABEL>.txt`, such as `pre-status` or `post-status`. Replaces an existing file with the same name; it does not append content. |
+| `--prefix LABEL` | Prefix timestamped output filenames when `--append` is not used; also limits which filenames are archived with `-a`. |
+| `-a` | Archive existing `.txt` output files before collection. |
+| `--archive-dir DIR` | Archive destination for `-a`. Default: the output folder's `archives` subfolder. |
+| `-l` | Repeat collection, waiting 60 seconds between runs. Stop with Ctrl+C. |
+| `--max-workers N` | Maximum concurrent device workers. Default: `20`; minimum: `1`. |
+| `--timeout SECONDS` | Connection timeout. Default: `20`; must be greater than zero. |
+| `--per-cmd-timeout SECONDS` | Accepted by the parser, but currently not forwarded by the CLI to the command runner, so setting it has no effect. |
+| `--initial-wait SECONDS` | Optional delay after connecting, before sending commands. |
+| `--idle-quiet SECONDS` | Deprecated compatibility option; commands now wait for the device prompt. Has no effect. |
+| `--default-username USER` | Fallback username when a device does not specify one. |
+| `--keyring-service SERVICE` | Keyring service used for credentials. Default: `py_ssh`. |
+| `-d`, `--diff` | Run `diff_sh.py` after collection to compare saved pre-status and post-status output. |
+| `--no-nat-port` | With `-d`, ignore ports in all four NAT address columns during comparison. |
+
+Commands can also be supplied as positional arguments. If neither direct
+commands nor a command file is supplied, the script uses its built-in commands.
+
+### Examples
+
+```bash
 python py_ssh.py --devices devices.json --device-groups dc --commands-file cmd_dc.txt --append pre-status
 python py_ssh.py --devices devices.json --device-groups 3850 --commands-file cmd_3850.txt --append pre-status
 python py_ssh.py --devices devices.json --device-groups voip --commands-file cmd_voip.txt --append pre-status
@@ -111,6 +142,7 @@ python py_ssh.py --devices devices.json --device-groups campus --commands-file c
 python py_ssh.py --devices devices.json --device-groups router 3850 voip --commands-file cmd_archive.txt --append pre-status
 python py_ssh.py --devices devices.json --device-groups critical --commands-file cmd_critical.txt --out critical --per-cmd-timeout 60 --append post-status -d
 python py_ssh.py --devices devices.json --device-groups sa21 --commands-file cmd_eigrp.txt --keyring-service none --default-username derwc@state.gov --append pre-status
+```
 
 Command-file block ID format:
 
