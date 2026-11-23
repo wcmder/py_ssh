@@ -234,6 +234,7 @@ class AuditTests(unittest.TestCase):
         result, _, _ = self.collect()
         self.assertEqual(len(result["interfaces"]), 2)
         self.assertEqual([r["ARP IP count"] for r in result["interfaces"]], [0, 0])
+        self.assertEqual(result["interfaces"][0]["Observed finding"], "0 hosts found, likely not a switch")
         self.assertEqual(next(r["Status"] for r in result["collection"] if r["Purpose"] == "arp"), "success_empty")
 
     def test_many_ips_one_mac_is_unknown(self):
@@ -241,6 +242,7 @@ class AuditTests(unittest.TestCase):
         row = result["interfaces"][0]
         self.assertEqual((row["ARP IP count"], row["Unique MAC count"]), (10, 1))
         self.assertEqual(row["Classification"], "Unknown")
+        self.assertEqual(row["Observed finding"], "1 host found, likely not a switch")
 
     def test_parent_neighbors_without_arp(self):
         result, _, _ = self.collect({"show cdp neighbors detail": CDP, "show lldp neighbors detail": LLDP})

@@ -386,7 +386,10 @@ def classify(neighbors: list[dict], mac_count: int | None, errors: list[str]) ->
         return "Amber", "Collection incomplete", finding
     color = {"Our domain": "Green", "Different advertised domain": "Red", "Neighbor domain undetermined": "Amber",
              "Likely third-party switch": "Red", "Unknown": "Neutral"}.get(finding, "Amber")
-    return color, finding, finding
+    observed = finding
+    if color == "Neutral":
+        observed = f"{mac_count} {'host' if mac_count == 1 else 'hosts'} found, likely not a switch"
+    return color, finding, observed
 
 
 def audit_vrf(vpn: int, vrf: str, collector: Collector, report: dict,
@@ -672,7 +675,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
             legend = [
                 ("Green", "Neighbor hostname matches any configured domain, including its subdomains."),
                 ("Red", "Different advertised domain, OR no neighbor and 2+ distinct non-router MACs on one interface: Likely third-party switch (unconfirmed)."),
-                ("Neutral", "No neighbor and 0–1 distinct non-router MACs on one interface: Unknown. White fill appears uncolored."),
+                ("Neutral", "No neighbor and 0–1 distinct non-router MACs on one interface: Unknown; likely not a switch. White fill appears uncolored."),
                 ("Amber", "Neighbor domain undetermined, or collection disabled, unsupported, incomplete or failed. Overrides other colors."),
             ]
             for row, (color, meaning) in enumerate(legend, 2):
@@ -685,13 +688,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
                 ws.cell(row, 2).font = Font(name="Arial", size=11, color="172B4D")
                 ws.cell(row, 2).alignment = Alignment(vertical="center", wrap_text=True)
                 ws.row_dimensions[row].height = 36
-            ws["A6"] = "Counts"
-            ws["A6"].font = Font(name="Arial", size=11, bold=True, color="172B4D")
-            ws.merge_cells("B6:E6")
-            ws["B6"] = "Counts are per VRF and logical interface; incomplete and router-owned IP/MAC entries are excluded. Blank counts mean unavailable, not zero."
-            ws["B6"].font = Font(name="Arial", size=11, color="172B4D")
-            ws["B6"].alignment = Alignment(vertical="center", wrap_text=True)
-            ws.row_dimensions[6].height = 36
+            ws.row_dimensions[6].height = 8
             ws.row_dimensions[7].height = 8
     manifest = wb.create_sheet("Command Manifest")
     manifest.append(["Purpose", "Command template", "When used", "Device verification"])
@@ -704,7 +701,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
         ["Threshold", "More than 1 distinct complete, non-router MAC on the SAME logical interface; parent ports are only used for neighbor matching."],
         ["Green", "Advertised neighbor hostname has exact dot-delimited domain suffix."],
         ["Red", "Different advertised domain, or no neighbor with >1 unique MAC: Likely third-party switch."],
-        ["Neutral", "No neighbor and 0–1 unique MACs: Unknown. Device type/model cannot be determined."],
+        ["Neutral", "No neighbor and 0–1 unique MACs: Unknown. Observed finding reports 0 hosts or 1 host found, likely not a switch. Device type/model cannot be determined."],
         ["Amber", "Unknown neighbor domain or incomplete collection. Observed finding retains known evidence."],
         ["Unknown counts", "Blank cells mean unavailable counts; zero requires successful parsed ARP and local identity collection."],
         ["ARP limits", "Cached IPv4 only. Proxy ARP, stale entries, virtualization and multiple IPs per MAC limit inference. Device type/model and switch presence are not confirmed."],

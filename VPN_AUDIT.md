@@ -162,6 +162,11 @@ exported, including down interfaces and those without ARP/neighbor entries.
 | Neutral | Successful no-neighbor collection and 0–1 unique MACs: Unknown |
 | Amber | Neighbor domain undetermined, or required collection incomplete |
 
+For neutral Unknown rows, Observed finding reads `1 host found, likely not a switch`
+when one non-router MAC is counted, or `0 hosts found, likely not a switch` when
+none are counted. This is an ARP-based inference, not confirmation of host count
+or absence of a switch. Failed collection does not receive this finding.
+
 For `example.org`, `sw.example.org` and `sw.site.example.org` match;
 `sw.badexample.org` and `sw.example.org.other.net` do not. Comparison is
 case-insensitive and tolerates a trailing DNS dot. Short names, IPs, MAC IDs and
@@ -180,7 +185,7 @@ disabled or unsupported discovery is amber, rather than neutral Unknown.
 ## Outputs and limitations
 
 Excel uses a single VRF column; the VPN selection is not repeated as a separate column.
-The Interfaces sheet opens with a color legend and count definitions above the
+The Interfaces sheet opens with a color legend above the
 table. The table header is on row 8; filters apply only to the table, and frozen
 panes keep the legend, header and identifying columns visible while scrolling.
 On Interfaces, F is Classification, G is Observed finding, H is ARP IP count,
