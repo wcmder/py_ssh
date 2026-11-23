@@ -17,12 +17,30 @@ Run against an inventory group:
 python vpn_neighbor_audit.py --devices devices.json --device-groups routers --out vpn-audit
 ```
 
-The script prompts for `VPN number` and `Our domain name`, then resolves missing
+The script prompts for VPN numbers and accepted domain names, then resolves missing
 credentials through the existing keyring/getpass workflow before starting workers.
 For unattended selection, supply `--vpn 20 --domain example.org`. Credentials must
 already be available to avoid a password prompt. Passwords are never CLI arguments.
 Service VPNs 1–65525 excluding 512 are accepted; transport and management VPNs are
 outside this audit's scope.
+
+Select multiple VPNs and accepted domains using spaces or commas:
+
+```bash
+python vpn_neighbor_audit.py --device-groups routers --vpn 20 30 --domain example.org another.org --threads 5
+python vpn_neighbor_audit.py --device-groups routers --vpn 20,30 --domain example.org,another.org
+```
+
+`--vpns` and `--domains` are aliases, and flags can be repeated. Prompts also
+accept spaces or commas. Duplicate VPNs/domains are removed after normalization.
+A neighbor matches if its hostname has the exact dot-delimited suffix of **any**
+accepted domain. Each root domain includes its subdomains. The accepted domains
+apply to all selected VPNs; there is no positional domain-to-VPN pairing.
+
+Each router uses one SSH session and one shared CDP/LLDP collection, with separate
+ARP tables and counts for each VRF. Failure to find one VRF does not prevent the
+other selected VRFs from being audited. Collection includes a summary per VRF;
+shared device commands have a blank VRF, while VRF-specific commands record it.
 
 Other shared options: `--default-username`, `--keyring-service` (default `py_ssh`),
 `--device-type` (default `cisco_ios`), `--timeout` (20 seconds),
@@ -43,6 +61,16 @@ explicit mapping, never a guess based on an RD or an interface number:
 ```bash
 python vpn_neighbor_audit.py --devices devices.json --device-groups routers --vpn 20 --domain example.org --vrf LAN20
 ```
+
+With multiple VPNs, use explicit mappings for named VRFs:
+
+```bash
+python vpn_neighbor_audit.py --device-groups routers --vpn 20 30 --domain example.org --vrf 20=LAN20 30=LAN30
+```
+
+Unmapped VPNs use inventory mappings or their numeric names. A bare `--vrf LAN20`
+is accepted only when one VPN is selected. Conflicting mappings and multiple VPNs
+resolving to the same VRF are reported instead of duplicating interface rows.
 
 For different mappings per router, add `"vpn_vrf_map": {"20": "LAN20"}` to the
 device or group defaults in your inventory. `--vrf` takes precedence. The VRF
@@ -152,6 +180,10 @@ disabled or unsupported discovery is amber, rather than neutral Unknown.
 ## Outputs and limitations
 
 Excel uses a single VRF column; the VPN selection is not repeated as a separate column.
+On Interfaces, F is Classification, G is ARP IP count, H is Observed finding,
+and I is Unique MAC count. For an Our domain classification, F displays the
+matching advertised hostname(s) instead of the words Our domain; the row remains
+green. Other classifications and collection failures retain their descriptive labels.
 The workbook contains Interfaces, ARP Details, Neighbors, Collection, Command
 Manifest and Readme. Interfaces has one row per selected interface with full-row
 colors; ARP Details includes exclusions and their reasons; Neighbors preserves

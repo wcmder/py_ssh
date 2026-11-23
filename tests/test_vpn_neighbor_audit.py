@@ -103,12 +103,14 @@ class FakeConnection:
 
 
 class AuditTests(unittest.TestCase):
-    def collect(self, overrides=None, device_extra=None):
+    def collect(self, overrides=None, device_extra=None, arg_extra=None):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         args = argparse.Namespace(vpn=20, domain="example.org", vrf=None, device_type="cisco_ios",
                                   timeout=20, per_cmd_timeout=30, output_dir=Path(temp.name),
                                   prefix="audit", append=None)
+        for key, value in (arg_extra or {}).items():
+            setattr(args, key, value)
         device = {"hostname": "inventory-router", "connect_host": "192.0.2.10", "username": "test", "password": "test"}
         device.update(device_extra or {})
         conn = FakeConnection(overrides)
@@ -136,6 +138,70 @@ class AuditTests(unittest.TestCase):
         for domain in ("", "example", "192.0.2.1", "bad domain.org", "a..org"):
             with self.assertRaises(ValueError):
                 audit.domain_name(domain)
+
+    def test_multiple_domains_exact_suffix(self):
+        domains = ["example.org", "another.org"]
+        for name in ("sw.s1.example.org", "sw.another.org", "sw.site.another.org"):
+            self.assertEqual(audit.neighbor_domain(name, domains), "Our domain")
+        for name in ("sw.badanother.org", "sw.another.org.evil.net", "sw.other.org"):
+            self.assertEqual(audit.neighbor_domain(name, domains), "Different advertised domain")
+        self.assertEqual(audit.neighbor_domain("sw", domains), "Neighbor domain undetermined")
+
+    def test_multiple_input_formats_and_overrides(self):
+        args = audit.build_parser().parse_args(["--vpn", "20,30", "--vpn", "20", "--domain", "example.org", "another.org"])
+        self.assertEqual(audit.vpn_numbers(args.vpn), [20, 30])
+        self.assertEqual(audit.vpn_numbers("20 30,20"), [20, 30])
+        self.assertEqual(audit.vrf_overrides(["20=LAN20", "30=LAN30"], [20, 30]), {"20": "LAN20", "30": "LAN30"})
+        for values in ([], "512", "0", "20,65526", "foo"):
+            with self.assertRaises(ValueError):
+                audit.vpn_numbers(values)
+        with self.assertRaises(ValueError):
+            audit.vrf_overrides("LAN20", [20, 30])
+
+    def test_multiple_vpns_one_session_separate_arp_and_ownership(self):
+        overrides = {
+            "show ip arp vrf 20": HEADER + arp("10.20.0.99", "aaaa.bbbb.0001"),
+            "show ip arp vrf 30": HEADER + arp("10.20.0.99", "0011.2233.4455", "Gi0/0/2.30") + arp("10.20.0.1", "aaaa.bbbb.0002", "Gi0/0/2.30"),
+            "show ip interface GigabitEthernet0/0/2.30": "GigabitEthernet0/0/2.30 is up, line protocol is up\n Internet address is 10.20.0.99/24",
+            "show cdp interface": "GigabitEthernet0/0/1 is up, line protocol is up\n Sending CDP packets every 60 seconds\nGigabitEthernet0/0/2 is up, line protocol is up\n Sending CDP packets every 60 seconds",
+            "show lldp interface": "GigabitEthernet0/0/1:\n Tx: enabled\n Rx: enabled\nGigabitEthernet0/0/2:\n Tx: enabled\n Rx: enabled",
+        }
+        result, conn, args = self.collect(overrides, arg_extra={"vpn": [20, 30], "domain": ["example.org", "another.org"]})
+        self.assertFalse(result["error"], result["error"])
+        self.assertEqual(conn.sent.count("show version"), 1)
+        self.assertEqual(conn.sent.count("show cdp neighbors detail"), 1)
+        self.assertEqual(conn.sent.count("show lldp neighbors detail"), 1)
+        rows = {(row["VRF"], row["Logical interface"]): row for row in result["interfaces"]}
+        self.assertEqual(rows[("20", "GigabitEthernet0/0/1.20")]["ARP IP count"], 1)
+        self.assertEqual(rows[("30", "GigabitEthernet0/0/2.30")]["ARP IP count"], 1)
+        self.assertEqual(rows[("30", "GigabitEthernet0/0/2.30")]["Unique MAC count"], 1)
+        arp_commands = [row for row in result["collection"] if row["Purpose"] == "arp"]
+        self.assertEqual([row["VRF"] for row in arp_commands], ["20", "30"])
+        from openpyxl import load_workbook
+        path = args.output_dir / "multi.xlsx"
+        audit.write_workbook(path, [result], args)
+        wb = load_workbook(path)
+        self.assertEqual(wb["Interfaces"].max_row, 4)
+        self.assertEqual(wb["Readme"]["B2"].value, "20, 30")
+        self.assertEqual(wb["Readme"]["B3"].value, "example.org, another.org")
+        self.assertNotIn("VPN", [cell.value for cell in wb["Interfaces"][1]])
+        wb.close()
+
+    def test_missing_vpn_does_not_block_other_vpn(self):
+        result, conn, _ = self.collect(arg_extra={"vpn": [999, 20]})
+        self.assertIn("VRF 999", result["error"])
+        self.assertEqual(len(result["interfaces"]), 2)
+        self.assertEqual(result["interfaces"][0]["Row color"], "Neutral")
+        self.assertIn("show ip arp vrf 20", conn.sent)
+        self.assertNotIn("show ip arp vrf 999", conn.sent)
+        summaries = [r for r in result["collection"] if r["Purpose"] == "VRF summary"]
+        self.assertEqual([r["Status"] for r in summaries], ["failed", "success_with_entries"])
+
+    def test_neighbor_matches_second_accepted_domain(self):
+        result, _, _ = self.collect({"show cdp neighbors detail": CDP.replace("example.org", "another.org")},
+                                    arg_extra={"domain": ["example.org", "another.org"]})
+        self.assertEqual(result["interfaces"][0]["Classification"], "Our domain")
+        self.assertEqual(result["interfaces"][0]["Row color"], "Green")
 
     def test_counts_remain_on_logical_interface(self):
         data = HEADER + arp("10.20.0.2", "aaaa.bbbb.0001") + arp("10.20.0.3", "aaaa.bbbb.0002")
@@ -310,6 +376,23 @@ class AuditTests(unittest.TestCase):
             wb.close()
             self.assertTrue(list(Path(folder).glob("*.txt")))
 
+    def test_cli_multiple_prompts_continue_after_missing_vrf(self):
+        from openpyxl import load_workbook
+        with tempfile.TemporaryDirectory() as folder:
+            conn = FakeConnection()
+            with patch.object(audit.ssh, "ConnectHandler", return_value=conn) as connect, \
+                 patch.object(audit.ssh, "_load_devices", return_value=[{"hostname": "r1", "connect_host": "192.0.2.1", "username": "u", "password": "p"}]), \
+                 patch("builtins.input", side_effect=["999,20,20", ".EXAMPLE.ORG,another.org,example.org"]), redirect_stdout(io.StringIO()):
+                status = audit.main(["--out", folder, "--append", "multi", "--threads", "2"])
+            self.assertEqual(status, 1)  # VRF 999 fails, but VRF 20 is exported.
+            connect.assert_called_once()
+            wb = load_workbook(Path(folder) / "vpn-audit-multi.xlsx")
+            self.assertEqual(wb["Interfaces"].max_row, 3)
+            self.assertEqual(wb["Readme"]["B2"].value, "999, 20")
+            self.assertEqual(wb["Readme"]["B3"].value, "example.org, another.org")
+            self.assertEqual(wb["Interfaces"]["C2"].value, "20")
+            wb.close()
+
     def test_command_manifest_never_connects_or_prompts(self):
         with patch.object(audit.ssh, "ConnectHandler") as connect, patch("builtins.input") as prompt, redirect_stdout(io.StringIO()) as out:
             self.assertEqual(audit.main(["--list-commands"]), 0)
@@ -330,11 +413,12 @@ class AuditTests(unittest.TestCase):
         for sheet in ("Interfaces", "ARP Details", "Neighbors", "Collection"):
             self.assertNotIn("VPN", [cell.value for cell in wb[sheet][1]])
             self.assertIn("VRF", [cell.value for cell in wb[sheet][1]])
-        self.assertEqual(wb["Interfaces"]["F2"].value, 0)
-        self.assertEqual(wb["Interfaces"]["F2"].data_type, "n")
-        self.assertEqual(wb["Interfaces"]["G1"].value, "Classification")
+        self.assertEqual(wb["Interfaces"]["G2"].value, 0)
+        self.assertEqual(wb["Interfaces"]["G2"].data_type, "n")
+        self.assertEqual(wb["Interfaces"]["F1"].value, "Classification")
+        self.assertEqual(wb["Interfaces"]["G1"].value, "ARP IP count")
         self.assertEqual(wb["Interfaces"]["H1"].value, "Observed finding")
-        self.assertEqual(wb["Interfaces"]["G2"].value, "Our domain")
+        self.assertEqual(wb["Interfaces"]["F2"].value, "switch.example.org")
         self.assertEqual(wb["Interfaces"]["H2"].value, "Our domain")
         self.assertEqual(wb["Interfaces"]["I1"].value, "Unique MAC count")
         self.assertEqual(wb["Interfaces"]["I2"].value, 0)

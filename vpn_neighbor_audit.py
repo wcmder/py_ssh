@@ -92,7 +92,8 @@ def domain_name(value: str) -> str:
     raise ValueError("Domain must not be an IP address")
 
 
-def neighbor_domain(name: str, domain: str) -> str:
+def neighbor_domain(name: str, domain: str | list[str]) -> str:
+    domains = [domain] if isinstance(domain, str) else domain
     name = name.strip().rstrip(".").lower()
     # A serial suffix in parentheses is not part of an advertised DNS name.
     name = re.sub(r"\([A-Za-z0-9_-]+\)$", "", name)
@@ -107,9 +108,43 @@ def neighbor_domain(name: str, domain: str) -> str:
         domain_name(name)
     except ValueError:
         return "Neighbor domain undetermined"
-    if name == domain:
+    if any(name.endswith("." + suffix) for suffix in domains):
+        return "Our domain"
+    if name in domains:
         return "Neighbor domain undetermined"
-    return "Our domain" if name.endswith("." + domain) else "Different advertised domain"
+    return "Different advertised domain"
+
+
+def split_values(values: str | int | list) -> list[str]:
+    items = values if isinstance(values, list) else [values]
+    return list(dict.fromkeys(token for item in items for token in re.split(r"[,\s]+", str(item).strip()) if token))
+
+
+def vpn_numbers(values: str | int | list) -> list[int]:
+    numbers = list(dict.fromkeys(int(value) for value in split_values(values)))
+    if not numbers or any(not 1 <= number <= 65525 or number == 512 for number in numbers):
+        raise ValueError("Select service VPNs from 1–65525, excluding management VPN 512")
+    return numbers
+
+
+def vrf_overrides(values: str | list[str] | None, vpns: list[int]) -> dict[str, str]:
+    overrides = {}
+    for value in split_values(values or []):
+        if "=" in value:
+            vpn, name = value.split("=", 1)
+            vpn = str(int(vpn))
+            if int(vpn) not in vpns:
+                raise ValueError(f"VRF override VPN {vpn} is not selected")
+        elif len(vpns) == 1:
+            vpn, name = str(vpns[0]), value
+        else:
+            raise ValueError("For multiple VPNs use --vrf 20=LAN20 30=LAN30")
+        if not SAFE_NAME.fullmatch(name):
+            raise ValueError("Invalid VRF name")
+        if vpn in overrides and overrides[vpn] != name:
+            raise ValueError(f"Conflicting VRF overrides for VPN {vpn}")
+        overrides[vpn] = name
+    return overrides
 
 
 @dataclass
@@ -120,6 +155,7 @@ class Result:
     status: str = "pending"
     output: str = ""
     error: str = ""
+    vrf: str = ""
 
     def parsed(self, entries: Any) -> Any:
         self.status = "success_with_entries" if entries else "success_empty"
@@ -131,12 +167,13 @@ class Collector:
         self.conn, self.timeout = conn, timeout
         self.results: list[Result] = []
         self.broken = False
+        self.vrf = ""
 
     def run(self, key: str, value: str = "") -> Result:
         if value and not SAFE_NAME.fullmatch(value):
             raise ValueError(f"Unsafe CLI identifier: {value!r}")
         command = TEMPLATES[key].replace("<VRF>", value).replace("<INTERFACE>", value)
-        result = Result(command, key)
+        result = Result(command, key, vrf=self.vrf)
         self.results.append(result)
         if self.broken:
             result.status, result.error = "failed", "Session stopped after command exception; reconnect required"
@@ -351,9 +388,109 @@ def classify(neighbors: list[dict], mac_count: int | None, errors: list[str]) ->
     return color, finding, finding
 
 
+def audit_vrf(vpn: int, vrf: str, collector: Collector, report: dict,
+              args: argparse.Namespace, configs: dict, vrfs: dict, memberships: dict,
+              known: set, discovery: dict, neighbors: list, config_result: Result,
+              global_issues: list[str]) -> None:
+    base = report["base"]
+    issues = list(global_issues)
+
+    def note(result: Result, label: str) -> None:
+        if result.status not in GOOD:
+            issues.append(f"{label}: {result.status}: {result.error}")
+
+    if vrf not in known:
+        raise ValueError(f"VPN {vpn}: VRF {vrf!r} not verified on router; use --vrf or inventory vpn_vrf_map for a named VRF")
+    configs = configs or {}
+    selected = set((vrfs or {}).get(vrf, set())) | set((memberships or {}).get(vrf, set()))
+    selected.update(i for i, c in configs.items() if c["vrf"] == vrf)
+    if not selected:
+        report["error"] = "; ".join(issues)
+    for interface in selected:
+        if interface in configs and configs[interface]["vrf"] != vrf:
+            issues.append(f"Conflicting VRF membership for {interface}")
+    arp_result, arp = collector.get("arp", parse_arp, vrf, "arp_fallback")
+    note(arp_result, "ARP")
+    # Addresses can overlap between VRFs. Only addresses in THIS VRF are local
+    # ownership evidence for this ARP table.
+    own_ips = set().union(*(c["ips"] for c in configs.values() if c["vrf"] == vrf))
+    own_macs = set().union(*(c["macs"] for c in configs.values())) if configs else set()
+    interface_errors = {i: [] for i in selected}
+    for interface in selected:
+        if interface not in configs:
+            interface_errors[interface].append("Interface missing from configuration; local/virtual ownership cannot be verified")
+    for interface in sorted(selected | ({physical_parent(i) for i in selected} - {""})):
+        result, data = collector.get("interface", parse_interface, interface)
+        if data:
+            if interface in selected:
+                own_ips.update(data["ips"])
+            own_macs.update(data["macs"])
+        for logical in selected:
+            if interface in {logical, physical_parent(logical)} and result.status not in GOOD:
+                interface_errors[logical].append(f"{result.command}: {result.status}: {result.error}")
+            if interface == physical_parent(logical) and data and not data["macs"]:
+                interface_errors[logical].append(f"Local MAC unavailable for {interface}")
+    for interface in sorted(selected):
+        result, addresses = collector.get("ip_interface", parse_ip_interface, interface)
+        own_ips.update(addresses or set())
+        if result.status not in GOOD:
+            interface_errors[interface].append(f"{result.command}: {result.status}: {result.error}")
+    # Reject unexplained complete entries outside the discovered VPN interface set.
+    if any(a["Complete"] and a["Logical interface"] not in selected for a in arp or []):
+        issues.append("ARP includes interfaces absent from selected VRF discovery")
+    count_trusted = arp_result.status in GOOD and config_result.status in GOOD
+    for entry in arp or []:
+        reason = ("Incomplete" if not entry["Complete"] else
+                  "Router-owned IP" if entry["IP address"] in own_ips else
+                  "Router-owned MAC" if entry["MAC address"] in own_macs else
+                  "Outside selected interfaces" if entry["Logical interface"] not in selected else "Included")
+        # Well-known HSRP/VRRP MACs alone do not prove local ownership.
+        row = {**base, **entry, "Physical parent": physical_parent(entry["Logical interface"]), "Disposition": reason}
+        report["arp"].append(row)
+    for interface in sorted(selected):
+        errors = issues + interface_errors[interface]
+        parent = physical_parent(interface)
+        matched = []
+        for proto in ("CDP", "LLDP"):
+            exact = [n for n in neighbors if n["Protocol"] == proto and n["Local interface"] == interface]
+            candidates = exact or [n for n in neighbors if n["Protocol"] == proto and parent and n["Local interface"] == parent]
+            for neighbor in candidates:
+                n = {**base, **neighbor, "Logical interface": interface, "Physical parent": parent,
+                     "Match scope": "Logical interface" if exact else "Physical parent",
+                     "Domain classification": neighbor_domain(neighbor["Neighbor name"], args.domain)}
+                matched.append(n)
+                report["neighbors"].append(n)
+            sr, ir, nr = discovery[proto]
+            for r in (sr, ir, nr):
+                if r.status not in GOOD:
+                    errors.append(f"{r.command}: {r.status}: {r.error}")
+            if not candidates and not discovery_enabled(proto, interface, sr, ir):
+                errors.append(f"{proto} receive/discovery not verified on {parent or interface}")
+        entries = [a for a in report["arp"] if a["Logical interface"] == interface and a["Disposition"] == "Included"]
+        trusted = count_trusted and not interface_errors[interface]
+        ip_count = len({a["IP address"] for a in entries}) if trusted else None
+        mac_count = len({a["MAC address"] for a in entries}) if trusted else None
+        color, classification, finding = classify(matched, mac_count, errors)
+        if not matched and any(e.startswith(("show cdp", "show lldp", "CDP receive", "LLDP receive")) for e in errors):
+            finding = "Neighbor absence unverified"
+        def join(key: str) -> str:
+            return "\n".join(f"{n['Protocol']}: {n[key]}" for n in matched)
+        report["interfaces"].append({**base, "Logical interface": interface, "Physical parent": parent,
+            "ARP IP count": ip_count, "Unique MAC count": mac_count,
+            "Neighbor protocol": ", ".join(sorted({n["Protocol"] for n in matched})),
+            "Neighbor name": join("Neighbor name"), "Neighbor port": join("Neighbor port"),
+            "Advertised platform": join("Advertised platform"), "System description": join("System description"),
+            "Match scope": join("Match scope"), "Classification": classification, "Observed finding": finding,
+            "Matched hostname": "\n".join(dict.fromkeys(n["Neighbor name"] for n in matched
+                if n["Domain classification"] == "Our domain")),
+            "Row color": color, "Collection errors": "\n".join(dict.fromkeys(errors)), "Timestamp UTC": now()})
+    if not selected:
+        report["error"] = "; ".join(issues)
+
+
 def audit_device(device: dict, args: argparse.Namespace) -> dict:
     host = device.get("hostname") or device.get("display_name") or device["connect_host"]
-    base = {"Router name": host, "SSH address": device["connect_host"], "VPN": args.vpn, "VRF": ""}
+    base = {"Router name": host, "SSH address": device["connect_host"], "VRF": ""}
     report: dict = {"interfaces": [], "arp": [], "neighbors": [], "collection": [], "base": base, "error": ""}
     conn, collector = None, None
     issues: list[str] = []
@@ -396,12 +533,6 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
         member_result, memberships = collector.get("membership", parse_membership)
         definition_result, definitions = collector.get("vrf_config", parse_vrf_config, fallback="vrf_config_fallback")
         config_result, configs = collector.get("interfaces", parse_config, fallback="interfaces_fallback")
-        # A named VRF is an explicit mapping, never guessed from its RD/name suffix.
-        mapping = device.get("vpn_vrf_map", {})
-        vrf = args.vrf or mapping.get(str(args.vpn)) or str(args.vpn)
-        if not isinstance(vrf, str) or not SAFE_NAME.fullmatch(vrf):
-            raise ValueError("Invalid resolved VRF name")
-        base["VRF"] = vrf
         known = set(vrfs or {}) | set(memberships or {}) | (definitions or set()) | {c["vrf"] for c in (configs or {}).values()}
         # Always run both neighbor collections, even if VRF discovery failed.
         discovery = {}
@@ -413,93 +544,38 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
             nr, entries = collector.get(prefix, lambda t, p=proto: parse_neighbors(t, p))
             discovery[proto] = (sr, ir, nr)
             neighbors.extend(entries or [])
-        if vrf not in known:
-            for r in (vr, member_result, definition_result, config_result):
-                note(r, r.purpose)
-            raise ValueError(f"VPN {args.vpn}: VRF {vrf!r} not verified on router; use --vrf or inventory vpn_vrf_map for a named VRF")
-        for r in (vr, member_result, config_result):
-            note(r, r.purpose)
-        configs = configs or {}
-        selected = set((vrfs or {}).get(vrf, set())) | set((memberships or {}).get(vrf, set()))
-        selected.update(i for i, c in configs.items() if c["vrf"] == vrf)
-        if not selected:
-            report["error"] = "; ".join(issues)
-        for interface in selected:
-            if interface in configs and configs[interface]["vrf"] != vrf:
-                issues.append(f"Conflicting VRF membership for {interface}")
-        arp_result, arp = collector.get("arp", parse_arp, vrf, "arp_fallback")
-        note(arp_result, "ARP")
-        # Addresses can overlap between VRFs. Only addresses in THIS VRF are local
-        # ownership evidence for this ARP table.
-        own_ips = set().union(*(c["ips"] for c in configs.values() if c["vrf"] == vrf))
-        own_macs = set().union(*(c["macs"] for c in configs.values())) if configs else set()
-        interface_errors = {i: [] for i in selected}
-        for interface in selected:
-            if interface not in configs:
-                interface_errors[interface].append("Interface missing from configuration; local/virtual ownership cannot be verified")
-        for interface in sorted(selected | ({physical_parent(i) for i in selected} - {""})):
-            result, data = collector.get("interface", parse_interface, interface)
-            if data:
-                if interface in selected:
-                    own_ips.update(data["ips"])
-                own_macs.update(data["macs"])
-            for logical in selected:
-                if interface in {logical, physical_parent(logical)} and result.status not in GOOD:
-                    interface_errors[logical].append(f"{result.command}: {result.status}: {result.error}")
-                if interface == physical_parent(logical) and data and not data["macs"]:
-                    interface_errors[logical].append(f"Local MAC unavailable for {interface}")
-        for interface in sorted(selected):
-            result, addresses = collector.get("ip_interface", parse_ip_interface, interface)
-            own_ips.update(addresses or set())
-            if result.status not in GOOD:
-                interface_errors[interface].append(f"{result.command}: {result.status}: {result.error}")
-        # Reject unexplained complete entries outside the discovered VPN interface set.
-        if any(a["Complete"] and a["Logical interface"] not in selected for a in arp or []):
-            issues.append("ARP includes interfaces absent from selected VRF discovery")
-        count_trusted = arp_result.status in GOOD and config_result.status in GOOD
-        for entry in arp or []:
-            reason = ("Incomplete" if not entry["Complete"] else
-                      "Router-owned IP" if entry["IP address"] in own_ips else
-                      "Router-owned MAC" if entry["MAC address"] in own_macs else
-                      "Outside selected interfaces" if entry["Logical interface"] not in selected else "Included")
-            # Well-known HSRP/VRRP MACs alone do not prove local ownership.
-            row = {**base, **entry, "Physical parent": physical_parent(entry["Logical interface"]), "Disposition": reason}
-            report["arp"].append(row)
-        for interface in sorted(selected):
-            errors = issues + interface_errors[interface]
-            parent = physical_parent(interface)
-            matched = []
-            for proto in ("CDP", "LLDP"):
-                exact = [n for n in neighbors if n["Protocol"] == proto and n["Local interface"] == interface]
-                candidates = exact or [n for n in neighbors if n["Protocol"] == proto and parent and n["Local interface"] == parent]
-                for neighbor in candidates:
-                    n = {**base, **neighbor, "Logical interface": interface, "Physical parent": parent,
-                         "Match scope": "Logical interface" if exact else "Physical parent",
-                         "Domain classification": neighbor_domain(neighbor["Neighbor name"], args.domain)}
-                    matched.append(n)
-                    report["neighbors"].append(n)
-                sr, ir, nr = discovery[proto]
-                for r in (sr, ir, nr):
-                    if r.status not in GOOD:
-                        errors.append(f"{r.command}: {r.status}: {r.error}")
-                if not candidates and not discovery_enabled(proto, interface, sr, ir):
-                    errors.append(f"{proto} receive/discovery not verified on {parent or interface}")
-            entries = [a for a in report["arp"] if a["Logical interface"] == interface and a["Disposition"] == "Included"]
-            trusted = count_trusted and not interface_errors[interface]
-            ip_count = len({a["IP address"] for a in entries}) if trusted else None
-            mac_count = len({a["MAC address"] for a in entries}) if trusted else None
-            color, classification, finding = classify(matched, mac_count, errors)
-            if not matched and any(e.startswith(("show cdp", "show lldp", "CDP receive", "LLDP receive")) for e in errors):
-                finding = "Neighbor absence unverified"
-            def join(key: str) -> str:
-                return "\n".join(f"{n['Protocol']}: {n[key]}" for n in matched)
-            report["interfaces"].append({**base, "Logical interface": interface, "Physical parent": parent,
-                "ARP IP count": ip_count, "Unique MAC count": mac_count,
-                "Neighbor protocol": ", ".join(sorted({n["Protocol"] for n in matched})),
-                "Neighbor name": join("Neighbor name"), "Neighbor port": join("Neighbor port"),
-                "Advertised platform": join("Advertised platform"), "System description": join("System description"),
-                "Match scope": join("Match scope"), "Classification": classification, "Observed finding": finding,
-                "Row color": color, "Collection errors": "\n".join(dict.fromkeys(errors)), "Timestamp UTC": now()})
+        for result in (vr, member_result, config_result):
+            note(result, result.purpose)
+        vpns = vpn_numbers(args.vpn)
+        overrides = vrf_overrides(args.vrf, vpns)
+        mapping = device.get("vpn_vrf_map", {})
+        if not isinstance(mapping, dict):
+            raise ValueError("Inventory vpn_vrf_map must be a mapping")
+        resolved = set()
+        for vpn in vpns:
+            vrf = overrides.get(str(vpn)) or mapping.get(str(vpn)) or str(vpn)
+            part = {"base": {**base, "VRF": vrf}, "interfaces": [], "arp": [], "neighbors": [], "error": ""}
+            collector.vrf = vrf if isinstance(vrf, str) else ""
+            try:
+                if not isinstance(vrf, str) or not SAFE_NAME.fullmatch(vrf):
+                    raise ValueError("Invalid resolved VRF name")
+                if vrf in resolved:
+                    raise ValueError(f"Multiple selected VPNs resolve to the same VRF {vrf!r}")
+                resolved.add(vrf)
+                audit_vrf(vpn, vrf, collector, part, args, configs or {}, vrfs or {},
+                          memberships or {}, known, discovery, neighbors, config_result, issues)
+            except Exception as exc:
+                part["error"] = str(exc)
+                with ssh.print_lock:
+                    print(f"[error] {host} | VRF {vrf}: {exc}", flush=True)
+            for key in ("interfaces", "arp", "neighbors"):
+                report[key].extend(part[key])
+            errors = part["error"] or "\n".join(dict.fromkeys(e for row in part["interfaces"] for e in row["Collection errors"].splitlines()))
+            collector.results.append(Result("", "VRF summary", status="failed" if errors else
+                "success_with_entries" if part["interfaces"] else "success_empty", error=errors, vrf=collector.vrf))
+            if errors:
+                report["error"] = "\n".join(filter(None, [report["error"], f"VRF {vrf}: {errors}"]))
+        collector.vrf = ""
     except Exception as exc:
         report["error"] = "; ".join(issues + [str(exc)])
         with ssh.print_lock:
@@ -511,12 +587,12 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
             except Exception:
                 pass
         results = collector.results if collector else []
-        report["collection"] = [{**base, "Command": r.command, "Purpose": r.purpose,
+        report["collection"] = [{**base, "VRF": r.vrf, "Command": r.command, "Purpose": r.purpose,
             "Status": r.status, "Collection errors": r.error, "Timestamp UTC": r.timestamp} for r in results]
         report["collection"].append({**base, "Command": "", "Purpose": "Router summary",
             "Status": "failed" if report["error"] or any(i["Collection errors"] for i in report["interfaces"]) else "success_with_entries" if report["interfaces"] else "success_empty",
             "Collection errors": report["error"] or "\n".join(dict.fromkeys(e for i in report["interfaces"] for e in i["Collection errors"].splitlines())), "Timestamp UTC": now()})
-        raw = "".join(f"\n################################################ ({r.command})\nTimestamp UTC: {r.timestamp}\nStatus: {r.status}\n{r.output}\nERROR: {r.error}\n" for r in results)
+        raw = "".join(f"\n################################################ ({r.command})\nTimestamp UTC: {r.timestamp}\nVRF: {r.vrf}\nStatus: {r.status}\n{r.output}\nERROR: {r.error}\n" for r in results)
         if report["error"]:
             raw += f"\nERROR: {report['error']}\n"
         # Include address in the label so duplicate inventory hostnames do not collide.
@@ -539,7 +615,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
     wb = Workbook()
     wb.remove(wb.active)
     sheets = [
-        ("Interfaces", "interfaces", BASE_COLUMNS + ["ARP IP count", "Classification", "Observed finding", "Unique MAC count", "Neighbor protocol", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Row color", "Collection errors", "Timestamp UTC"]),
+        ("Interfaces", "interfaces", BASE_COLUMNS + ["Classification", "ARP IP count", "Observed finding", "Unique MAC count", "Neighbor protocol", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Row color", "Collection errors", "Timestamp UTC"]),
         ("ARP Details", "arp", BASE_COLUMNS + ["IP address", "MAC address", "Age", "Complete", "Disposition"]),
         ("Neighbors", "neighbors", BASE_COLUMNS + ["Protocol", "Local interface", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Domain classification"]),
         ("Collection", "collection", ["Router name", "SSH address", "VRF", "Command", "Purpose", "Status", "Collection errors", "Timestamp UTC"]),
@@ -549,7 +625,10 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
         ws.append(columns)
         for report in reports:
             for row in report[key]:
-                ws.append([row.get(col) for col in columns])
+                values = [row.get(col) for col in columns]
+                if key == "interfaces" and row["Classification"] == "Our domain":
+                    values[columns.index("Classification")] = row.get("Matched hostname") or row["Classification"]
+                ws.append(values)
                 if key == "interfaces":
                     fill = PatternFill("solid", fgColor=COLORS[row["Row color"]])
                     for cell in ws[ws.max_row]:
@@ -587,7 +666,8 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
         manifest.append([key, command, purpose, "See Collection for actual router result; not pre-certified for 17.15.6"])
     notes = wb.create_sheet("Readme")
     for row in [
-        ["Setting", "Value"], ["Selected VRF number", args.vpn], ["Our domain", args.domain], ["Generated UTC", now()],
+        ["Setting", "Value"], ["Selected VRF numbers", ", ".join(split_values(args.vpn))],
+        ["Our domains", ", ".join(split_values(args.domain))], ["Generated UTC", now()],
         ["Threshold", "More than 1 distinct complete, non-router MAC on the SAME logical interface; parent ports are only used for neighbor matching."],
         ["Green", "Advertised neighbor hostname has exact dot-delimited domain suffix."],
         ["Red", "Different advertised domain, or no neighbor with >1 unique MAC: Likely third-party switch."],
@@ -622,9 +702,9 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--vpn", type=int, help="Service VPN number; prompt if omitted")
-    parser.add_argument("--domain", help="Our DNS domain; prompt if omitted")
-    parser.add_argument("--vrf", help="Explicit VRF name for selected VPN (otherwise inventory mapping or numeric VPN)")
+    parser.add_argument("--vpn", "--vpns", nargs="+", action="extend", help="Service VPN number(s), space/comma separated; prompt if omitted")
+    parser.add_argument("--domain", "--domains", nargs="+", action="extend", help="Accepted DNS domain(s), space/comma separated; prompt if omitted")
+    parser.add_argument("--vrf", nargs="+", action="extend", help="Named VRF, or mappings such as 20=LAN20 30=LAN30 for multiple VPNs")
     parser.add_argument("--devices", nargs="+", help="Inventory JSON/text file(s); defaults match py_ssh.py")
     parser.add_argument("--device-groups", nargs="+")
     parser.add_argument("--device-type", default="cisco_ios")
@@ -655,13 +735,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Session setup: Netmiko cisco_ios may issue terminal width 511, terminal length 0, prompt discovery and optional enable.")
         return 0
     try:
-        if args.vpn is None:
-            args.vpn = int(input("VPN number: ").strip())
-        if not 1 <= args.vpn <= 65525 or args.vpn == 512:
-            raise ValueError("Select a service VPN from 1–65525, excluding management VPN 512")
-        args.domain = domain_name(args.domain if args.domain is not None else input("Our domain name: "))
-        if args.vrf and not SAFE_NAME.fullmatch(args.vrf):
-            raise ValueError("Invalid VRF name")
+        args.vpn = vpn_numbers(args.vpn if args.vpn is not None else input("VPN number(s), space/comma separated: "))
+        raw_domains = args.domain if args.domain is not None else input("Our domain name(s), space/comma separated: ")
+        args.domain = list(dict.fromkeys(domain_name(value) for value in split_values(raw_domains)))
+        if not args.domain:
+            raise ValueError("Enter at least one DNS domain")
+        vrf_overrides(args.vrf, args.vpn)
         if args.max_workers < 1 or args.timeout <= 0 or args.per_cmd_timeout <= 0:
             raise ValueError("Workers and timeout values must be positive")
         for label in (args.prefix, args.append):
