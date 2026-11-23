@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import ipaddress
+import os
 from pathlib import Path
 import re
 import sys
@@ -763,7 +764,11 @@ def main(argv: list[str] | None = None) -> int:
         path = args.output_dir / f"{name}.xlsx"
         write_workbook(path, reports, args)
         failed = sum(bool(r["error"]) or any(i["Collection errors"] for i in r["interfaces"]) for r in reports)
-        print(f"[summary] Routers: {len(reports)}; incomplete: {failed}; workbook: {path}")
+        try:
+            display_path = "./" + Path(os.path.relpath(path)).as_posix()
+        except ValueError:  # Windows paths on another drive cannot be relative.
+            display_path = str(path)
+        print(f"[summary] Routers: {len(reports)}; incomplete: {failed}; workbook: {display_path}")
         return 1 if failed else 0
     except (ValueError, OSError, ImportError, EOFError) as exc:
         print(f"[error] {exc}", file=sys.stderr)
