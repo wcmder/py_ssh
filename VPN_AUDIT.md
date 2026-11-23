@@ -180,7 +180,7 @@ disabled or unsupported discovery is amber, rather than neutral Unknown.
 ## Outputs and limitations
 
 Excel uses a single VRF column; the VPN selection is not repeated as a separate column.
-On Interfaces, F is Classification, G is ARP IP count, H is Observed finding,
+On Interfaces, F is Classification, G is Observed finding, H is ARP IP count,
 and I is Unique MAC count. For an Our domain classification, F displays the
 matching advertised hostname(s) instead of the words Our domain; the row remains
 green. Other classifications and collection failures retain their descriptive labels.

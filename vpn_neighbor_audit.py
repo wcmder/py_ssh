@@ -616,7 +616,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
     wb = Workbook()
     wb.remove(wb.active)
     sheets = [
-        ("Interfaces", "interfaces", BASE_COLUMNS + ["Classification", "ARP IP count", "Observed finding", "Unique MAC count", "Neighbor protocol", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Row color", "Collection errors", "Timestamp UTC"]),
+        ("Interfaces", "interfaces", BASE_COLUMNS + ["Classification", "Observed finding", "ARP IP count", "Unique MAC count", "Neighbor protocol", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Row color", "Collection errors", "Timestamp UTC"]),
         ("ARP Details", "arp", BASE_COLUMNS + ["IP address", "MAC address", "Age", "Complete", "Disposition"]),
         ("Neighbors", "neighbors", BASE_COLUMNS + ["Protocol", "Local interface", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Domain classification"]),
         ("Collection", "collection", ["Router name", "SSH address", "VRF", "Command", "Purpose", "Status", "Collection errors", "Timestamp UTC"]),
