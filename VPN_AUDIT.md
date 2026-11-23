@@ -180,6 +180,9 @@ disabled or unsupported discovery is amber, rather than neutral Unknown.
 ## Outputs and limitations
 
 Excel uses a single VRF column; the VPN selection is not repeated as a separate column.
+The Interfaces sheet opens with a color legend and count definitions above the
+table. The table header is on row 8; filters apply only to the table, and frozen
+panes keep the legend, header and identifying columns visible while scrolling.
 On Interfaces, F is Classification, G is Observed finding, H is ARP IP count,
 and I is Unique MAC count. For an Our domain classification, F displays the
 matching advertised hostname(s) instead of the words Our domain; the row remains

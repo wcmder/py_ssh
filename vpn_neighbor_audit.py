@@ -605,6 +605,7 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
 
 
 BASE_COLUMNS = ["Router name", "SSH address", "VRF", "Logical interface", "Physical parent"]
+INTERFACES_HEADER_ROW = 8
 
 
 def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) -> None:
@@ -623,6 +624,9 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
     ]
     for title, key, columns in sheets:
         ws = wb.create_sheet(title)
+        header_row = INTERFACES_HEADER_ROW if key == "interfaces" else 1
+        for _ in range(header_row - 1):
+            ws.append([])
         ws.append(columns)
         for report in reports:
             for row in report[key]:
@@ -637,16 +641,16 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
                 elif key == "collection" and row["Status"] not in GOOD:
                     for cell in ws[ws.max_row]:
                         cell.fill = PatternFill("solid", fgColor=COLORS["Amber"])
-        ws.freeze_panes = "F2" if key in {"interfaces", "arp", "neighbors"} else "D2"
-        ws.auto_filter.ref = ws.dimensions
+        ws.freeze_panes = f"F{header_row + 1}" if key in {"interfaces", "arp", "neighbors"} else "D2"
+        ws.auto_filter.ref = f"A{header_row}:{get_column_letter(len(columns))}{ws.max_row}"
         ws.sheet_view.showGridLines = False
-        for cells in ws.iter_rows():
+        for cells in ws.iter_rows(min_row=header_row):
             for cell in cells:
                 if isinstance(cell.value, str):
                     cell.value = ILLEGAL_CHARACTERS_RE.sub("", cell.value)[:32767]
                     cell.data_type = "s"  # Treat untrusted advertised names as text, never formulas.
                 cell.alignment = Alignment(vertical="top", wrap_text=True)
-                if cell.row == 1:
+                if cell.row == header_row:
                     cell.fill = PatternFill("solid", fgColor="17365D")
                     cell.font = Font(name="Arial", color="FFFFFF", bold=True, size=11)
                     cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -657,10 +661,38 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
         for index, column in enumerate(columns, 1):
             width = 45 if column in {"Collection errors", "System description", "Observed finding", "Classification", "Command"} else 28 if column in {"Neighbor name", "Advertised platform", "Timestamp UTC"} else 23
             ws.column_dimensions[get_column_letter(index)].width = width
-        ws.row_dimensions[1].height = 34
-        for row in range(2, ws.max_row + 1):
+        ws.row_dimensions[header_row].height = 34
+        for row in range(header_row + 1, ws.max_row + 1):
             lines = max((sum(max(1, (len(part) + 39) // 40) for part in str(c.value or "").split("\n")) for c in ws[row]), default=1)
             ws.row_dimensions[row].height = min(300, max(30, lines * 16))
+        if key == "interfaces":
+            ws["A1"] = "Color meaning"
+            ws["A1"].font = Font(name="Arial", size=14, bold=True, color="17365D")
+            ws.row_dimensions[1].height = 24
+            legend = [
+                ("Green", "Neighbor hostname matches any configured domain, including its subdomains."),
+                ("Red", "Different advertised domain, OR no neighbor and 2+ distinct non-router MACs on one interface: Likely third-party switch (unconfirmed)."),
+                ("Neutral", "No neighbor and 0–1 distinct non-router MACs on one interface: Unknown. White fill appears uncolored."),
+                ("Amber", "Neighbor domain undetermined, or collection disabled, unsupported, incomplete or failed. Overrides other colors."),
+            ]
+            for row, (color, meaning) in enumerate(legend, 2):
+                ws.cell(row, 1, "Neutral (no color)" if color == "Neutral" else color)
+                ws.cell(row, 1).fill = PatternFill("solid", fgColor=COLORS[color])
+                ws.cell(row, 1).font = Font(name="Arial", size=11, bold=True, color="172B4D")
+                ws.cell(row, 1).alignment = Alignment(vertical="center", wrap_text=True)
+                ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
+                ws.cell(row, 2, meaning)
+                ws.cell(row, 2).font = Font(name="Arial", size=11, color="172B4D")
+                ws.cell(row, 2).alignment = Alignment(vertical="center", wrap_text=True)
+                ws.row_dimensions[row].height = 36
+            ws["A6"] = "Counts"
+            ws["A6"].font = Font(name="Arial", size=11, bold=True, color="172B4D")
+            ws.merge_cells("B6:E6")
+            ws["B6"] = "Counts are per VRF and logical interface; incomplete and router-owned IP/MAC entries are excluded. Blank counts mean unavailable, not zero."
+            ws["B6"].font = Font(name="Arial", size=11, color="172B4D")
+            ws["B6"].alignment = Alignment(vertical="center", wrap_text=True)
+            ws.row_dimensions[6].height = 36
+            ws.row_dimensions[7].height = 8
     manifest = wb.create_sheet("Command Manifest")
     manifest.append(["Purpose", "Command template", "When used", "Device verification"])
     for key, command, purpose in COMMANDS:

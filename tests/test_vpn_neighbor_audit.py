@@ -181,10 +181,10 @@ class AuditTests(unittest.TestCase):
         path = args.output_dir / "multi.xlsx"
         audit.write_workbook(path, [result], args)
         wb = load_workbook(path)
-        self.assertEqual(wb["Interfaces"].max_row, 4)
+        self.assertEqual(wb["Interfaces"].max_row, audit.INTERFACES_HEADER_ROW + 3)
         self.assertEqual(wb["Readme"]["B2"].value, "20, 30")
         self.assertEqual(wb["Readme"]["B3"].value, "example.org, another.org")
-        self.assertNotIn("VPN", [cell.value for cell in wb["Interfaces"][1]])
+        self.assertNotIn("VPN", [cell.value for cell in wb["Interfaces"][audit.INTERFACES_HEADER_ROW]])
         wb.close()
 
     def test_missing_vpn_does_not_block_other_vpn(self):
@@ -372,7 +372,7 @@ class AuditTests(unittest.TestCase):
             path = Path(folder) / "vpn-audit-review.xlsx"
             self.assertTrue(path.is_file())
             wb = load_workbook(path)
-            self.assertEqual(wb["Interfaces"].max_row, 3)
+            self.assertEqual(wb["Interfaces"].max_row, audit.INTERFACES_HEADER_ROW + 2)
             wb.close()
             self.assertTrue(list(Path(folder).glob("*.txt")))
 
@@ -387,10 +387,10 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(status, 1)  # VRF 999 fails, but VRF 20 is exported.
             connect.assert_called_once()
             wb = load_workbook(Path(folder) / "vpn-audit-multi.xlsx")
-            self.assertEqual(wb["Interfaces"].max_row, 3)
+            self.assertEqual(wb["Interfaces"].max_row, audit.INTERFACES_HEADER_ROW + 2)
             self.assertEqual(wb["Readme"]["B2"].value, "999, 20")
             self.assertEqual(wb["Readme"]["B3"].value, "example.org, another.org")
-            self.assertEqual(wb["Interfaces"]["C2"].value, "20")
+            self.assertEqual(wb["Interfaces"]["C9"].value, "20")
             wb.close()
 
     def test_command_manifest_never_connects_or_prompts(self):
@@ -411,22 +411,29 @@ class AuditTests(unittest.TestCase):
         self.addCleanup(wb.close)
         self.assertEqual(wb.sheetnames, ["Interfaces", "ARP Details", "Neighbors", "Collection", "Command Manifest", "Readme"])
         for sheet in ("Interfaces", "ARP Details", "Neighbors", "Collection"):
-            self.assertNotIn("VPN", [cell.value for cell in wb[sheet][1]])
-            self.assertIn("VRF", [cell.value for cell in wb[sheet][1]])
-        self.assertEqual(wb["Interfaces"]["H2"].value, 0)
-        self.assertEqual(wb["Interfaces"]["H2"].data_type, "n")
-        self.assertEqual(wb["Interfaces"]["F1"].value, "Classification")
-        self.assertEqual(wb["Interfaces"]["H1"].value, "ARP IP count")
-        self.assertEqual(wb["Interfaces"]["G1"].value, "Observed finding")
-        self.assertEqual(wb["Interfaces"]["F2"].value, "switch.example.org")
-        self.assertEqual(wb["Interfaces"]["G2"].value, "Our domain")
-        self.assertEqual(wb["Interfaces"]["I1"].value, "Unique MAC count")
-        self.assertEqual(wb["Interfaces"]["I2"].value, 0)
-        self.assertEqual(wb["Interfaces"]["I2"].number_format, "#,##0")
-        self.assertEqual(wb["Interfaces"]["A2"].fill.fgColor.rgb, "00C6EFCE")
+            header_row = audit.INTERFACES_HEADER_ROW if sheet == "Interfaces" else 1
+            self.assertNotIn("VPN", [cell.value for cell in wb[sheet][header_row]])
+            self.assertIn("VRF", [cell.value for cell in wb[sheet][header_row]])
+        self.assertEqual(wb["Interfaces"]["H9"].value, 0)
+        self.assertEqual(wb["Interfaces"]["H9"].data_type, "n")
+        self.assertEqual(wb["Interfaces"]["F8"].value, "Classification")
+        self.assertEqual(wb["Interfaces"]["H8"].value, "ARP IP count")
+        self.assertEqual(wb["Interfaces"]["G8"].value, "Observed finding")
+        self.assertEqual(wb["Interfaces"]["F9"].value, "switch.example.org")
+        self.assertEqual(wb["Interfaces"]["G9"].value, "Our domain")
+        self.assertEqual(wb["Interfaces"]["I8"].value, "Unique MAC count")
+        self.assertEqual(wb["Interfaces"]["I9"].value, 0)
+        self.assertEqual(wb["Interfaces"]["I9"].number_format, "#,##0")
+        self.assertEqual(wb["Interfaces"]["A9"].fill.fgColor.rgb, "00C6EFCE")
         self.assertEqual(wb["Neighbors"]["H2"].value, "=1+1")
         self.assertEqual(wb["Neighbors"]["H2"].data_type, "s")
-        self.assertEqual(wb["Interfaces"].freeze_panes, "F2")
+        self.assertEqual(wb["Interfaces"].freeze_panes, "F9")
+        self.assertEqual(wb["Interfaces"].auto_filter.ref, "A8:R10")
+        self.assertEqual(wb["Interfaces"]["A1"].value, "Color meaning")
+        for row, color in enumerate(("Green", "Red", "Neutral", "Amber"), 2):
+            self.assertEqual(wb["Interfaces"].cell(row, 1).fill.fgColor.rgb, "00" + audit.COLORS[color])
+        self.assertIn("2+", wb["Interfaces"]["B3"].value)
+        self.assertIn("0–1", wb["Interfaces"]["B4"].value)
         self.assertEqual(wb["Command Manifest"].max_row, len(audit.COMMANDS) + 1)
         self.assertEqual(wb["Collection"].cell(wb["Collection"].max_row, 1).fill.fgColor.rgb, "00FFEB9C")
 
