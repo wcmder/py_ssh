@@ -743,8 +743,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", "--output-dir", dest="output_dir", type=Path)
     parser.add_argument("--prefix", default="vpn-audit")
     parser.add_argument("--append", help="Stable filename label; overwrites like py_ssh.py")
-    parser.add_argument("--max-workers", "--threads", dest="max_workers", type=int, default=ssh.THREAD,
-                        help=f"Maximum concurrent router threads (default: {ssh.THREAD})")
+    parser.add_argument("--max-workers", "--threads", dest="max_workers", type=int, default=10,
+                        help="Maximum concurrent router threads (default: 10)")
     parser.add_argument("--timeout", type=float, default=20)
     parser.add_argument("--per-cmd-timeout", type=float, default=ssh.PER_CMD_TIMEOUT)
     parser.add_argument("--list-commands", action="store_true", help="Print every show command and fallback; no SSH/prompts")

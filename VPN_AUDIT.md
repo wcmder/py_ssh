@@ -44,7 +44,7 @@ shared device commands have a blank VRF, while VRF-specific commands record it.
 
 Other shared options: `--default-username`, `--keyring-service` (default `py_ssh`),
 `--device-type` (default `cisco_ios`), `--timeout` (20 seconds),
-`--per-cmd-timeout` (30 seconds), `--max-workers`/`--threads` (20), `--out`/`--output-dir`,
+`--per-cmd-timeout` (30 seconds), `--max-workers`/`--threads` (10), `--out`/`--output-dir`,
 `--prefix` (default `vpn-audit`) and `--append`. Output labels accept letters,
 numbers, underscores and hyphens. Like `py_ssh.py`, `--append` means a stable
 filename that is overwritten, not appended content. Raw filenames include both
