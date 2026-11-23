@@ -143,7 +143,9 @@ class AuditTests(unittest.TestCase):
         result, conn, _ = self.collect({"show ip arp vrf 20": data})
         self.assertFalse(result["error"])
         self.assertEqual([r["Unique MAC count"] for r in result["interfaces"]], [2, 1])
-        self.assertEqual([r["Row color"] for r in result["interfaces"]], ["Neutral", "Neutral"])
+        self.assertEqual([r["Row color"] for r in result["interfaces"]], ["Red", "Neutral"])
+        self.assertEqual(result["interfaces"][0]["Classification"], "Likely third-party switch")
+        self.assertEqual(result["interfaces"][1]["Classification"], "Unknown")
         self.assertIn("show lldp neighbors detail", conn.sent)
         self.assertIn("show cdp neighbors detail", conn.sent)
 
@@ -168,11 +170,11 @@ class AuditTests(unittest.TestCase):
         self.assertEqual([r["ARP IP count"] for r in result["interfaces"]], [0, 0])
         self.assertEqual(next(r["Status"] for r in result["collection"] if r["Purpose"] == "arp"), "success_empty")
 
-    def test_many_ips_one_mac_is_baseline(self):
+    def test_many_ips_one_mac_is_unknown(self):
         result, _, _ = self.collect({"show ip arp vrf 20": HEADER + "".join(arp(f"10.20.0.{i}", "aaaa.bbbb.0001") for i in range(2, 12))})
         row = result["interfaces"][0]
         self.assertEqual((row["ARP IP count"], row["Unique MAC count"]), (10, 1))
-        self.assertEqual(row["Classification"], "Consistent with KG255 baseline")
+        self.assertEqual(row["Classification"], "Unknown")
 
     def test_parent_neighbors_without_arp(self):
         result, _, _ = self.collect({"show cdp neighbors detail": CDP, "show lldp neighbors detail": LLDP})
@@ -213,7 +215,7 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(row["Row color"], "Amber")
         self.assertEqual(row["Observed finding"], "Different advertised domain")
 
-    def test_disabled_discovery_is_not_baseline(self):
+    def test_disabled_discovery_is_not_neutral_unknown(self):
         result, _, _ = self.collect({"show lldp": "% LLDP is not enabled"})
         row = result["interfaces"][0]
         self.assertEqual(row["Row color"], "Amber")
@@ -325,12 +327,22 @@ class AuditTests(unittest.TestCase):
         wb = load_workbook(path)
         self.addCleanup(wb.close)
         self.assertEqual(wb.sheetnames, ["Interfaces", "ARP Details", "Neighbors", "Collection", "Command Manifest", "Readme"])
-        self.assertEqual(wb["Interfaces"]["G2"].value, 0)
-        self.assertEqual(wb["Interfaces"]["G2"].data_type, "n")
+        for sheet in ("Interfaces", "ARP Details", "Neighbors", "Collection"):
+            self.assertNotIn("VPN", [cell.value for cell in wb[sheet][1]])
+            self.assertIn("VRF", [cell.value for cell in wb[sheet][1]])
+        self.assertEqual(wb["Interfaces"]["F2"].value, 0)
+        self.assertEqual(wb["Interfaces"]["F2"].data_type, "n")
+        self.assertEqual(wb["Interfaces"]["G1"].value, "Classification")
+        self.assertEqual(wb["Interfaces"]["H1"].value, "Observed finding")
+        self.assertEqual(wb["Interfaces"]["G2"].value, "Our domain")
+        self.assertEqual(wb["Interfaces"]["H2"].value, "Our domain")
+        self.assertEqual(wb["Interfaces"]["I1"].value, "Unique MAC count")
+        self.assertEqual(wb["Interfaces"]["I2"].value, 0)
+        self.assertEqual(wb["Interfaces"]["I2"].number_format, "#,##0")
         self.assertEqual(wb["Interfaces"]["A2"].fill.fgColor.rgb, "00C6EFCE")
-        self.assertEqual(wb["Neighbors"]["I2"].value, "=1+1")
-        self.assertEqual(wb["Neighbors"]["I2"].data_type, "s")
-        self.assertEqual(wb["Interfaces"].freeze_panes, "G2")
+        self.assertEqual(wb["Neighbors"]["H2"].value, "=1+1")
+        self.assertEqual(wb["Neighbors"]["H2"].data_type, "s")
+        self.assertEqual(wb["Interfaces"].freeze_panes, "F2")
         self.assertEqual(wb["Command Manifest"].max_row, len(audit.COMMANDS) + 1)
         self.assertEqual(wb["Collection"].cell(wb["Collection"].max_row, 1).fill.fgColor.rgb, "00FFEB9C")
 

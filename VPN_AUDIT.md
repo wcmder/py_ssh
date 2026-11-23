@@ -26,11 +26,16 @@ outside this audit's scope.
 
 Other shared options: `--default-username`, `--keyring-service` (default `py_ssh`),
 `--device-type` (default `cisco_ios`), `--timeout` (20 seconds),
-`--per-cmd-timeout` (30 seconds), `--max-workers` (20), `--out`/`--output-dir`,
+`--per-cmd-timeout` (30 seconds), `--max-workers`/`--threads` (20), `--out`/`--output-dir`,
 `--prefix` (default `vpn-audit`) and `--append`. Output labels accept letters,
 numbers, underscores and hyphens. Like `py_ssh.py`, `--append` means a stable
 filename that is overwritten, not appended content. Raw filenames include both
 inventory hostname and SSH address to distinguish identically named routers.
+
+Use `--threads 5` to collect from up to five routers concurrently. Commands for
+each router run sequentially in its own SSH session. Console progress shows
+`[connect]`, then `[connected]` after SSH login and optional enable authentication
+succeed, followed by `[done]` or an error.
 
 VPN 20 normally selects a verified VRF named `20`. A named VRF requires an
 explicit mapping, never a guess based on an RD or an interface number:
@@ -112,7 +117,8 @@ between VPNs. A static remote entry with age `-` is retained. Duplicate ARP line
 do not inflate counts. Unknown counts are blank, never zero.
 
 For example, four IPs sharing one MAC count as four IPs and one unique MAC.
-Two MACs on `Gi0/0/1.20` and one on `Gi0/0/1.21` do not cross the threshold.
+Two MACs on `Gi0/0/1.20` cross the threshold on that interface; one MAC on
+`Gi0/0/1.21` does not. One MAC on each interface is never combined into two.
 Subinterfaces retain separate counts even when their physical parent is shared.
 
 Neighbors are matched to the logical interface first, then its physical parent.
@@ -124,8 +130,8 @@ exported, including down interfaces and those without ARP/neighbor entries.
 | --- | --- |
 | Green | Advertised hostname has our exact dot-delimited DNS suffix: Our domain |
 | Red | Neighbor advertises a determinable different domain |
-| Red | Successful no-neighbor collection and **more than 2 unique complete non-router MACs on the same logical interface**: Likely third-party switch |
-| Neutral | Successful no-neighbor collection and 0–2 unique MACs: Consistent with KG255 baseline |
+| Red | Successful no-neighbor collection and **more than 1 unique complete non-router MAC on the same logical interface**: Likely third-party switch |
+| Neutral | Successful no-neighbor collection and 0–1 unique MACs: Unknown |
 | Amber | Neighbor domain undetermined, or required collection incomplete |
 
 For `example.org`, `sw.example.org` and `sw.site.example.org` match;
@@ -141,10 +147,11 @@ green. Required collection failure overrides the row to amber while Observed
 finding retains known neighbor evidence. If discovery cannot establish absence,
 Observed finding says `Neighbor absence unverified`. Both protocols must be
 successfully collected, with interface discovery available, to establish absence;
-disabled or unsupported discovery is amber, not an inferred KG255 baseline.
+disabled or unsupported discovery is amber, rather than neutral Unknown.
 
 ## Outputs and limitations
 
+Excel uses a single VRF column; the VPN selection is not repeated as a separate column.
 The workbook contains Interfaces, ARP Details, Neighbors, Collection, Command
 Manifest and Readme. Interfaces has one row per selected interface with full-row
 colors; ARP Details includes exclusions and their reasons; Neighbors preserves
@@ -163,7 +170,7 @@ ARP is a cached IPv4 snapshot, not an endpoint census. Silent hosts, proxy ARP,
 stale entries, remote static entries, virtual machines and many IPs sharing one
 MAC affect inference. Advertised neighbor names are unverified. Shared parent
 neighbors do not prove connectivity in each VLAN. Neither the switch inference
-nor the KG255 baseline confirms device identity. Unknown CLI formats remain
+nor a neutral Unknown classification confirms device identity. Unknown CLI formats remain
 visible errors and may need parser updates after device verification.
 
 Run offline checks without contacting routers:

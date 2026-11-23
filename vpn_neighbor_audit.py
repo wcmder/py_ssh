@@ -343,11 +343,11 @@ def classify(neighbors: list[dict], mac_count: int | None, errors: list[str]) ->
     elif mac_count is None:
         finding = "ARP count unavailable"
     else:
-        finding = "Likely third-party switch" if mac_count > 2 else "Consistent with KG255 baseline"
+        finding = "Likely third-party switch" if mac_count > 1 else "Unknown"
     if errors:
         return "Amber", "Collection incomplete", finding
     color = {"Our domain": "Green", "Different advertised domain": "Red", "Neighbor domain undetermined": "Amber",
-             "Likely third-party switch": "Red", "Consistent with KG255 baseline": "Neutral"}.get(finding, "Amber")
+             "Likely third-party switch": "Red", "Unknown": "Neutral"}.get(finding, "Amber")
     return color, finding, finding
 
 
@@ -372,6 +372,8 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
         conn = ssh.ConnectHandler(**params)
         if device.get("enable") or device.get("secret"):
             conn.enable()
+        with ssh.print_lock:
+            print(f"[connected] {host} | {device['connect_host']}", flush=True)
         collector = Collector(conn, args.per_cmd_timeout)
         def note(result: Result, label: str) -> None:
             if result.status not in GOOD:
@@ -525,7 +527,7 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
     return report
 
 
-BASE_COLUMNS = ["Router name", "SSH address", "VPN", "VRF", "Logical interface", "Physical parent"]
+BASE_COLUMNS = ["Router name", "SSH address", "VRF", "Logical interface", "Physical parent"]
 
 
 def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) -> None:
@@ -537,10 +539,10 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
     wb = Workbook()
     wb.remove(wb.active)
     sheets = [
-        ("Interfaces", "interfaces", BASE_COLUMNS + ["ARP IP count", "Unique MAC count", "Neighbor protocol", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Classification", "Observed finding", "Row color", "Collection errors", "Timestamp UTC"]),
+        ("Interfaces", "interfaces", BASE_COLUMNS + ["ARP IP count", "Classification", "Observed finding", "Unique MAC count", "Neighbor protocol", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Row color", "Collection errors", "Timestamp UTC"]),
         ("ARP Details", "arp", BASE_COLUMNS + ["IP address", "MAC address", "Age", "Complete", "Disposition"]),
         ("Neighbors", "neighbors", BASE_COLUMNS + ["Protocol", "Local interface", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Domain classification"]),
-        ("Collection", "collection", ["Router name", "SSH address", "VPN", "VRF", "Command", "Purpose", "Status", "Collection errors", "Timestamp UTC"]),
+        ("Collection", "collection", ["Router name", "SSH address", "VRF", "Command", "Purpose", "Status", "Collection errors", "Timestamp UTC"]),
     ]
     for title, key, columns in sheets:
         ws = wb.create_sheet(title)
@@ -555,7 +557,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
                 elif key == "collection" and row["Status"] not in GOOD:
                     for cell in ws[ws.max_row]:
                         cell.fill = PatternFill("solid", fgColor=COLORS["Amber"])
-        ws.freeze_panes = "G2" if key in {"interfaces", "arp", "neighbors"} else "E2"
+        ws.freeze_panes = "F2" if key in {"interfaces", "arp", "neighbors"} else "D2"
         ws.auto_filter.ref = ws.dimensions
         ws.sheet_view.showGridLines = False
         for cells in ws.iter_rows():
@@ -570,7 +572,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
                     cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                 else:
                     cell.font = Font(name="Arial", color="172B4D", size=11)
-                if cell.column in (7, 8) and key == "interfaces":
+                if key == "interfaces" and columns[cell.column - 1] in {"ARP IP count", "Unique MAC count"}:
                     cell.number_format = "#,##0"
         for index, column in enumerate(columns, 1):
             width = 45 if column in {"Collection errors", "System description", "Observed finding", "Classification", "Command"} else 28 if column in {"Neighbor name", "Advertised platform", "Timestamp UTC"} else 23
@@ -585,14 +587,14 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
         manifest.append([key, command, purpose, "See Collection for actual router result; not pre-certified for 17.15.6"])
     notes = wb.create_sheet("Readme")
     for row in [
-        ["Setting", "Value"], ["VPN", args.vpn], ["Our domain", args.domain], ["Generated UTC", now()],
-        ["Threshold", "More than 2 distinct complete, non-router MACs on the SAME logical interface; parent ports are only used for neighbor matching."],
+        ["Setting", "Value"], ["Selected VRF number", args.vpn], ["Our domain", args.domain], ["Generated UTC", now()],
+        ["Threshold", "More than 1 distinct complete, non-router MAC on the SAME logical interface; parent ports are only used for neighbor matching."],
         ["Green", "Advertised neighbor hostname has exact dot-delimited domain suffix."],
-        ["Red", "Different advertised domain, or no neighbor with >2 unique MACs: Likely third-party switch."],
-        ["Neutral", "No neighbor and 0–2 unique MACs: Consistent with KG255 baseline."],
+        ["Red", "Different advertised domain, or no neighbor with >1 unique MAC: Likely third-party switch."],
+        ["Neutral", "No neighbor and 0–1 unique MACs: Unknown. Device type/model cannot be determined."],
         ["Amber", "Unknown neighbor domain or incomplete collection. Observed finding retains known evidence."],
         ["Unknown counts", "Blank cells mean unavailable counts; zero requires successful parsed ARP and local identity collection."],
-        ["ARP limits", "Cached IPv4 only. Proxy ARP, stale entries, virtualization and multiple IPs per MAC limit inference. Neither switches nor KG255 identity are confirmed."],
+        ["ARP limits", "Cached IPv4 only. Proxy ARP, stale entries, virtualization and multiple IPs per MAC limit inference. Device type/model and switch presence are not confirmed."],
         ["Neighbor limits", "Advertised names are unverified claims. Parent-port evidence does not prove connectivity in an individual VLAN. Discovery disabled/unsupported cannot establish absence."],
         ["Ownership", "Known local/virtual IPs and local interface MACs are excluded. Age '-' alone does not mean local. Remote static entries remain included."],
         ["Collection", "Read-only show commands. Netmiko may issue terminal width/length session setup, prompt detection and optional enable; no configuration or active probes."],
@@ -631,7 +633,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", "--output-dir", dest="output_dir", type=Path)
     parser.add_argument("--prefix", default="vpn-audit")
     parser.add_argument("--append", help="Stable filename label; overwrites like py_ssh.py")
-    parser.add_argument("--max-workers", type=int, default=ssh.THREAD)
+    parser.add_argument("--max-workers", "--threads", dest="max_workers", type=int, default=ssh.THREAD,
+                        help=f"Maximum concurrent router threads (default: {ssh.THREAD})")
     parser.add_argument("--timeout", type=float, default=20)
     parser.add_argument("--per-cmd-timeout", type=float, default=ssh.PER_CMD_TIMEOUT)
     parser.add_argument("--list-commands", action="store_true", help="Print every show command and fallback; no SSH/prompts")
