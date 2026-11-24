@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import glob
 import ipaddress
+import logging
 import os
 from pathlib import Path
 import re
@@ -52,6 +55,25 @@ PREFIXES = [("TwentyFiveGigE", ("twe",)), ("TenGigabitEthernet", ("te",)),
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+@contextmanager
+def ssh_diagnostics(path: Path):
+    """Keep Paramiko's background-thread tracebacks out of the console."""
+    logger = logging.getLogger("paramiko")
+    previous = (logger.handlers[:], logger.level, logger.propagate)
+    handler = logging.FileHandler(path, encoding="utf-8", delay=True)
+    handler.setLevel(logging.ERROR)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(name)s [%(threadName)s] %(levelname)s: %(message)s"))
+    logger.handlers = [handler]
+    logger.setLevel(logging.ERROR)
+    logger.propagate = False
+    try:
+        yield
+    finally:
+        logger.handlers, level, logger.propagate = previous
+        logger.setLevel(level)
+        handler.close()
 
 
 def interface_name(value: str) -> str:
@@ -105,9 +127,10 @@ def neighbor_domain(name: str, domain: str | list[str]) -> str:
         pass
     if mac_address(name) or "." not in name:
         return "Neighbor domain undetermined"
-    try:
-        domain_name(name)
-    except ValueError:
+    # Discovery IDs are advertised names, not DNS lookups. Network devices often
+    # use underscores; accept those here while keeping configured domains strict.
+    if len(name) > 253 or any(not re.fullmatch(r"[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?", label)
+                              for label in name.split(".")):
         return "Neighbor domain undetermined"
     if any(name.endswith("." + suffix) for suffix in domains):
         return "Our domain"
@@ -187,6 +210,10 @@ class Collector:
             # Do not let late output from a timed-out command enter another block.
             self.broken = True
             return result
+        return self.check_output(result, key)
+
+    @staticmethod
+    def check_output(result: Result, key: str) -> Result:
         text = result.output
         if re.search(r"(?im)^\s*%.*(?:invalid input|unrecognized|unknown command|incomplete command|ambiguous command|not supported)", text):
             result.status, result.error = "unsupported", text.strip()
@@ -202,7 +229,7 @@ class Collector:
 
     def get(self, key: str, parser: Callable, value: str = "", fallback: str = "") -> tuple[Result, Any]:
         result = self.run(key, value)
-        if result.status == "unsupported" and fallback:
+        if result.status in {"unsupported", "missing"} and fallback:
             result = self.run(fallback, value)
         if result.status != "received":
             return result, None
@@ -211,6 +238,111 @@ class Collector:
         except (ValueError, IndexError) as exc:
             result.status, result.error = "parse_error", str(exc)
             return result, None
+
+
+def saved_command_key(command: str) -> str:
+    """Normalize CLI whitespace and common show abbreviations, not VRF names."""
+    command = " ".join(command.strip().split())
+    command = re.sub(r"^sh\b", "show", command, flags=re.I)
+    command = re.sub(r"^show (?:int|interface)\b", "show interfaces", command, flags=re.I)
+    command = re.sub(r"^show ip int\b", "show ip interface", command, flags=re.I)
+    command = re.sub(r"\s*\|\s*", " | ", command)
+    # Interface abbreviations in arguments must agree with live normalization.
+    tokens = command.split()
+    if tokens and IF_TOKEN.fullmatch(tokens[-1]):
+        tokens[-1] = interface_name(tokens[-1])
+    return " ".join(tokens)
+
+
+class SavedCollector(Collector):
+    """Replay one saved router snapshot; never establishes an SSH connection."""
+    def __init__(self, path: Path):
+        super().__init__(None, 0)
+        self.path = path
+        text = path.read_text(encoding="utf-8-sig")
+        headers = list(re.finditer(r"(?m)^#{16,}[ \t]*([^\r\n]*)", text))
+        if not headers:
+            raise ValueError("No saved command blocks found; use raw output from this audit or py_ssh.py")
+        preamble = text[:headers[0].start()]
+        def metadata(label: str) -> str:
+            match = re.search(rf"(?m)^{re.escape(label)}:[ \t]*(.*)$", preamble)
+            return match.group(1).strip() if match else ""
+        self.router_name = metadata("Router name")
+        self.ssh_address = metadata("SSH address")
+        if not self.ssh_address:
+            # Historical audit files include the SSH IPv4 address in the filename.
+            matches = re.findall(r"-(\d{1,3}(?:\.\d{1,3}){3})(?=[_-]|$)", path.stem)
+            if matches:
+                try:
+                    self.ssh_address = str(ipaddress.IPv4Address(matches[-1]))
+                except ValueError:
+                    pass
+        self.blocks: list[Result] = []
+        for index, header in enumerate(headers):
+            label = header.group(1).strip()
+            match = re.search(r"\((.*)\)$", label)
+            command = match.group(1).strip() if match else label
+            if not re.match(r"(?:sh|show)\s+", command, re.I):
+                continue  # Skip generated VRF/router summaries and terminal setup.
+            end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
+            body = text[header.end():end].lstrip("\r\n")
+            fields = {}
+            while True:
+                field_match = re.match(r"(Timestamp UTC|VRF|Status):[ \t]*([^\r\n]*)(?:\r?\n|$)", body)
+                if not field_match:
+                    break
+                fields[field_match.group(1)] = field_match.group(2).strip()
+                body = body[field_match.end():]
+            error = ""
+            if "Status" in fields:
+                parts = re.split(r"(?m)^ERROR:[ \t]*", body, maxsplit=1)
+                body = parts[0]
+                if len(parts) > 1:
+                    error = parts[1].strip()
+            self.blocks.append(Result(command, "saved", timestamp=fields.get("Timestamp UTC", ""),
+                status=fields.get("Status", "received"), output=body.rstrip(), error=error,
+                vrf=fields.get("VRF", "")))
+        if not self.blocks:
+            raise ValueError("No recognizable show command blocks found in saved file")
+
+    def run(self, key: str, value: str = "") -> Result:
+        if value and not SAFE_NAME.fullmatch(value):
+            raise ValueError(f"Unsafe CLI identifier: {value!r}")
+        command = TEMPLATES[key].replace("<VRF>", value).replace("<INTERFACE>", value)
+        candidates = [block for block in self.blocks if saved_command_key(block.command) == saved_command_key(command)]
+        scoped = [block for block in candidates if block.vrf == self.vrf]
+        candidates = scoped or [block for block in candidates if not block.vrf]
+        result = Result(command, key, timestamp="", vrf=self.vrf)
+        self.results.append(result)
+        if not candidates:
+            result.status, result.error = "missing", "Command not present in saved file"
+            return result
+        saved = candidates[-1]
+        result.timestamp, result.output = saved.timestamp, saved.output
+        if saved.status in {"failed", "unsupported", "disabled", "missing"}:
+            result.status, result.error = saved.status, saved.error or f"Saved command status: {saved.status}"
+            return result
+        # Reparse old parse errors with the current parser; do not reuse old scores.
+        return self.check_output(result, key)
+
+
+def saved_targets(values: list[str]) -> list[dict]:
+    paths = []
+    for value in values:
+        path = Path(value).expanduser()
+        matches = [path] if path.exists() else [Path(item) for item in sorted(glob.glob(str(path)))]
+        if not matches:
+            raise ValueError(f"Saved input not found: {value}")
+        for match in matches:
+            files = sorted(match.glob("*.txt")) if match.is_dir() else [match]
+            if not files:
+                raise ValueError(f"No .txt files in {match}")
+            for item in files:
+                if not item.is_file() or item.suffix.lower() != ".txt":
+                    raise ValueError(f"Saved input must be a .txt file: {item}")
+                if item.resolve() not in paths:
+                    paths.append(item.resolve())
+    return [{"hostname": path.stem, "connect_host": "", "saved_file": path} for path in paths]
 
 
 def parse_vrfs(text: str) -> dict[str, set[str]]:
@@ -497,25 +629,35 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
     base = {"Router name": host, "SSH address": device["connect_host"], "VRF": ""}
     report: dict = {"interfaces": [], "arp": [], "neighbors": [], "collection": [], "base": base, "error": ""}
     conn, collector = None, None
+    saved_file = device.get("saved_file")
+    if saved_file:
+        base["Source file"] = str(saved_file)
     issues: list[str] = []
     try:
-        ssh._resolve_auth(device)
-        if ssh.ConnectHandler is None:
-            raise RuntimeError("netmiko is not installed")
-        with ssh.print_lock:
-            print(f"[connect] {host} | {device['connect_host']}", flush=True)
-        params = dict(device_type=ssh._device_type_from(device, args.device_type), host=device["connect_host"],
-                      username=device["username"], password=device["password"], port=int(device.get("port") or 22),
-                      conn_timeout=args.timeout, auth_timeout=args.timeout, banner_timeout=args.timeout,
-                      timeout=args.timeout, fast_cli=False, allow_agent=False, use_keys=False)
-        if device.get("secret"):
-            params["secret"] = device["secret"]
-        conn = ssh.ConnectHandler(**params)
-        if device.get("enable") or device.get("secret"):
-            conn.enable()
-        with ssh.print_lock:
-            print(f"[connected] {host} | {device['connect_host']}", flush=True)
-        collector = Collector(conn, args.per_cmd_timeout)
+        if saved_file:
+            with ssh.print_lock:
+                print(f"[load] {Path(saved_file).name}", flush=True)
+            collector = SavedCollector(Path(saved_file))
+            base["Router name"] = collector.router_name or host
+            base["SSH address"] = collector.ssh_address
+        else:
+            ssh._resolve_auth(device)
+            if ssh.ConnectHandler is None:
+                raise RuntimeError("netmiko is not installed")
+            with ssh.print_lock:
+                print(f"[connect] {host} | {device['connect_host']}", flush=True)
+            params = dict(device_type=ssh._device_type_from(device, args.device_type), host=device["connect_host"],
+                          username=device["username"], password=device["password"], port=int(device.get("port") or 22),
+                          conn_timeout=args.timeout, auth_timeout=args.timeout, banner_timeout=args.timeout,
+                          timeout=args.timeout, fast_cli=False, allow_agent=False, use_keys=False)
+            if device.get("secret"):
+                params["secret"] = device["secret"]
+            conn = ssh.ConnectHandler(**params)
+            if device.get("enable") or device.get("secret"):
+                conn.enable()
+            with ssh.print_lock:
+                print(f"[connected] {host} | {device['connect_host']}", flush=True)
+            collector = Collector(conn, args.per_cmd_timeout)
         def note(result: Result, label: str) -> None:
             if result.status not in GOOD:
                 issues.append(f"{label}: {result.status}: {result.error}")
@@ -570,8 +712,9 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
                           memberships or {}, known, discovery, neighbors, config_result, issues)
             except Exception as exc:
                 part["error"] = str(exc)
+                console_error = "VRF not found or unverified" if isinstance(vrf, str) and vrf not in known else "VRF collection failed"
                 with ssh.print_lock:
-                    print(f"[error] {host} | VRF {vrf}: {exc}", flush=True)
+                    print(f"[error] {host} | VRF {vrf}: {console_error}", flush=True)
             for key in ("interfaces", "arp", "neighbors"):
                 report[key].extend(part[key])
             errors = part["error"] or "\n".join(dict.fromkeys(e for row in part["interfaces"] for e in row["Collection errors"].splitlines()))
@@ -582,7 +725,9 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
         collector.vrf = ""
     except Exception as exc:
         report["error"] = "; ".join(issues + [str(exc)])
-        if "auth" in type(exc).__name__.lower() or re.search(r"authenticat|permission denied|access denied", str(exc), re.I):
+        if saved_file:
+            console_error = "Saved output could not be analyzed"
+        elif "auth" in type(exc).__name__.lower() or re.search(r"authenticat|permission denied|access denied", str(exc), re.I):
             console_error = "Authentication failed"
         elif conn is None:
             console_error = "SSH connection failed"
@@ -591,7 +736,8 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
         else:
             console_error = "Collection failed"
         with ssh.print_lock:
-            print(f"[error] {host} | {device['connect_host']}: {console_error}", flush=True)
+            target = Path(saved_file).name if saved_file else f"{host} | {device['connect_host']}"
+            print(f"[error] {target}: {console_error}", flush=True)
     finally:
         if conn:
             try:
@@ -604,15 +750,17 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
         report["collection"].append({**base, "Command": "", "Purpose": "Router summary",
             "Status": "failed" if report["error"] or any(i["Collection errors"] for i in report["interfaces"]) else "success_with_entries" if report["interfaces"] else "success_empty",
             "Collection errors": report["error"] or "\n".join(dict.fromkeys(e for i in report["interfaces"] for e in i["Collection errors"].splitlines())), "Timestamp UTC": now()})
-        raw = "".join(f"\n################################################ ({r.command})\nTimestamp UTC: {r.timestamp}\nVRF: {r.vrf}\nStatus: {r.status}\n{r.output}\nERROR: {r.error}\n" for r in results)
+        raw = f"Router name: {base['Router name']}\nSSH address: {base['SSH address']}\n"
+        raw += "".join(f"\n################################################ ({r.command})\nTimestamp UTC: {r.timestamp}\nVRF: {r.vrf}\nStatus: {r.status}\n{r.output}\nERROR: {r.error}\n" for r in results)
         if report["error"]:
             raw += f"\nERROR: {report['error']}\n"
         # Include address in the label so duplicate inventory hostnames do not collide.
         label = f"{host}-{device['connect_host']}"
-        ssh._write_output(args.output_dir, label, raw, args.append, args.prefix)
+        if not saved_file:
+            ssh._write_output(args.output_dir, label, raw, args.append, args.prefix)
     if collector is not None:
         with ssh.print_lock:
-            print(f"[done] {host}: {len(report['interfaces'])} selected interfaces", flush=True)
+            print(f"[done] {base['Router name']}: {len(report['interfaces'])} selected interfaces", flush=True)
     return report
 
 
@@ -635,6 +783,8 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
         ("Collection", "collection", ["Router name", "SSH address", "VRF", "Command", "Purpose", "Status", "Collection errors", "Timestamp UTC"]),
     ]
     for title, key, columns in sheets:
+        if any(report["base"].get("Source file") for report in reports):
+            columns = columns + ["Source file"]
         ws = wb.create_sheet(title)
         header_row = INTERFACES_HEADER_ROW if key == "interfaces" else 1
         for _ in range(header_row - 1):
@@ -669,7 +819,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
                 if key == "interfaces" and columns[cell.column - 1] in {"ARP IP count", "Unique MAC count"}:
                     cell.number_format = "#,##0"
         for index, column in enumerate(columns, 1):
-            width = 45 if column in {"Collection errors", "System description", "Observed finding", "Neighbor", "Command"} else 28 if column in {"Neighbor name", "Advertised platform", "Timestamp UTC"} else 23
+            width = 45 if column in {"Collection errors", "System description", "Observed finding", "Neighbor", "Command", "Source file"} else 28 if column in {"Neighbor name", "Advertised platform", "Timestamp UTC"} else 23
             ws.column_dimensions[get_column_letter(index)].width = width
         ws.row_dimensions[header_row].height = 34
         for row in range(header_row + 1, ws.max_row + 1):
@@ -705,6 +855,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
     for row in [
         ["Setting", "Value"], ["Selected VRF numbers", ", ".join(split_values(args.vpn))],
         ["Our domains", ", ".join(split_values(args.domain))], ["Generated UTC", now()],
+        ["Input mode", "Saved command output (offline)" if getattr(args, "from_files", None) else "SSH"],
         ["Threshold", "More than 1 distinct complete, non-router MAC on the SAME logical interface; parent ports are only used for neighbor matching."],
         ["Green", "Advertised neighbor hostname has exact dot-delimited domain suffix."],
         ["Red", "Different advertised domain, or no neighbor with >1 unique MAC: Likely third-party switch."],
@@ -714,7 +865,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
         ["ARP limits", "Cached IPv4 only. Proxy ARP, stale entries, virtualization and multiple IPs per MAC limit inference. Device type/model and switch presence are not confirmed."],
         ["Neighbor limits", "Advertised names are unverified claims. Parent-port evidence does not prove connectivity in an individual VLAN. Discovery disabled/unsupported cannot establish absence."],
         ["Ownership", "Known local/virtual IPs and local interface MACs are excluded. Age '-' alone does not mean local. Remote static entries remain included."],
-        ["Collection", "Read-only show commands. Netmiko may issue terminal width/length session setup, prompt detection and optional enable; no configuration or active probes."],
+        ["Collection", "Saved command blocks reparsed; no SSH or credentials used. See Source file columns for provenance." if getattr(args, "from_files", None) else "Read-only show commands. Netmiko may issue terminal width/length session setup, prompt detection and optional enable; no configuration or active probes."],
         ["Release", "Target 17.15.6. Commands/parsers require verification on actual hardware; unsupported and unknown output remain explicit."],
     ]:
         notes.append(row)
@@ -743,6 +894,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--domain", "--domains", nargs="+", action="extend", help="Accepted DNS domain(s), space/comma separated; prompt if omitted")
     parser.add_argument("--vrf", nargs="+", action="extend", help="Named VRF, or mappings such as 20=LAN20 30=LAN30 for multiple VPNs")
     parser.add_argument("--devices", nargs="+", help="Inventory JSON/text file(s); defaults match py_ssh.py")
+    parser.add_argument("--from-files", nargs="+", action="extend", metavar="PATH",
+                        help="Offline: saved router .txt files, folders or quoted globs; no SSH or credentials")
     parser.add_argument("--device-groups", nargs="+")
     parser.add_argument("--device-type", default="cisco_ios")
     parser.add_argument("--default-username")
@@ -785,18 +938,25 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("Output labels may contain only letters, numbers, underscores and hyphens")
         args.output_dir = ssh._resolve_cli_output_folder(args.output_dir)
         import openpyxl  # noqa: F401 -- fail before connecting if exporter is missing
-        devices = ssh._load_devices(args.devices, args.device_groups, args.default_username,
-                                    args.keyring_service, args.device_type)
+        if args.from_files:
+            if args.devices or args.device_groups:
+                raise ValueError("--from-files cannot be combined with --devices or --device-groups")
+            devices = saved_targets(args.from_files)
+        else:
+            devices = ssh._load_devices(args.devices, args.device_groups, args.default_username,
+                                        args.keyring_service, args.device_type)
         if not devices:
             raise ValueError("Inventory selection contains no devices; check --device-groups")
-        ssh._prefill_passwords(devices, args.default_username, args.keyring_service, True)
+        if not args.from_files:
+            ssh._prefill_passwords(devices, args.default_username, args.keyring_service, True)
         reports = []
-        with ThreadPoolExecutor(max_workers=args.max_workers) as pool:
+        name = f"{args.prefix}-{args.append}" if args.append else f"{args.prefix}_{ssh._timestamp()}"
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        with ssh_diagnostics(args.output_dir / f"{name}-ssh.log"), ThreadPoolExecutor(max_workers=args.max_workers) as pool:
             futures = [pool.submit(audit_device, device, args) for device in devices]
             for future in as_completed(futures):
                 reports.append(future.result())
-        reports.sort(key=lambda r: (r["base"]["Router name"], r["base"]["SSH address"]))
-        name = f"{args.prefix}-{args.append}" if args.append else f"{args.prefix}_{ssh._timestamp()}"
+        reports.sort(key=lambda r: (r["base"]["Router name"], r["base"]["SSH address"], r["base"].get("Source file", "")))
         path = args.output_dir / f"{name}.xlsx"
         write_workbook(path, reports, args)
         failed = sum(bool(r["error"]) or any(i["Collection errors"] for i in r["interfaces"]) for r in reports)
@@ -804,7 +964,8 @@ def main(argv: list[str] | None = None) -> int:
             display_path = "./" + Path(os.path.relpath(path)).as_posix()
         except ValueError:  # Windows paths on another drive cannot be relative.
             display_path = str(path)
-        print(f"[summary] Routers: {len(reports)}; incomplete: {failed}; workbook: {display_path}")
+        label = "Snapshots" if args.from_files else "Routers"
+        print(f"[summary] {label}: {len(reports)}; incomplete: {failed}; workbook: {display_path}")
         return 1 if failed else 0
     except (ValueError, OSError, ImportError, EOFError) as exc:
         print(f"[error] {exc}", file=sys.stderr)

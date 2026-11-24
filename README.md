@@ -7,7 +7,7 @@ Collect network device configurations and command output over SSH, then compare 
 | `py_ssh.py` | Connects to network devices over SSH using Netmiko, runs commands such as configuration or status commands, and saves the output per device. Supports device groups, command files, and custom output folders. |
 | `diff_sh.py` | Compares saved before/after show-command output using command-specific checks for interfaces, ARP, MAC tables, routing, BGP, NAT, and more. Writes per-device reports with `!   BEFORE` and `!   AFTER` sections; a missing command block is reported as `no such output`. |
 | `diff_cf.py` | Compares saved running configurations and reports differences in both directions, ignoring blank lines, `!` comments, and `Current configuration` lines. Supports automatic file matching and an option to skip hostname checks. |
-| `vpn_neighbor_audit.py` | Audits selected VPNs/VRFs using CDP, LLDP, multiple accepted domains and per-interface ARP mappings; exports a colored Excel workbook and raw command output. See [VPN audit usage and command manifest](VPN_AUDIT.md). |
+| `vpn_neighbor_audit.py` | Audits selected VPNs/VRFs using CDP, LLDP, multiple accepted domains and per-interface ARP mappings over SSH or from saved raw `.txt` output (`--from-files`); exports a colored Excel workbook. See [VPN audit usage and command manifest](VPN_AUDIT.md). |
 
 A typical workflow is to collect a baseline with `py_ssh.py`, collect again after a change, and compare the saved results with `diff_sh.py` for command output or `diff_cf.py` for configurations. Use `py_ssh.py -d` to run the show-output comparison automatically after collection.
 

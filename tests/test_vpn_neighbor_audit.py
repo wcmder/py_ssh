@@ -1,7 +1,8 @@
 """Offline fixtures, deliberately not a claim of device certification."""
 import argparse
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 import io
+import logging
 from pathlib import Path
 import tempfile
 import unittest
@@ -103,6 +104,20 @@ class FakeConnection:
 
 
 class AuditTests(unittest.TestCase):
+    def test_transport_traceback_goes_to_file_not_console(self):
+        logger = logging.getLogger("paramiko")
+        previous = (logger.handlers[:], logger.level, logger.propagate)
+        with tempfile.TemporaryDirectory() as folder, redirect_stderr(io.StringIO()) as console:
+            path = Path(folder) / "audit-ssh.log"
+            with audit.ssh_diagnostics(path):
+                child = logging.getLogger("paramiko.transport")
+                child.error("Exception (client): Invalid packet blocking")
+                child.error("Traceback: packet diagnostic details")
+            self.assertEqual(console.getvalue(), "")
+            self.assertIn("Invalid packet blocking", path.read_text())
+            self.assertIn("Traceback: packet diagnostic details", path.read_text())
+        self.assertEqual((logger.handlers, logger.level, logger.propagate), previous)
+
     def collect(self, overrides=None, device_extra=None, arg_extra=None):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -138,6 +153,20 @@ class AuditTests(unittest.TestCase):
         for domain in ("", "example", "192.0.2.1", "bad domain.org", "a..org"):
             with self.assertRaises(ValueError):
                 audit.domain_name(domain)
+
+    def test_advertised_hostname_with_underscore(self):
+        self.assertEqual(audit.neighbor_domain("btn01_sw01.example.com", "example.com"), "Our domain")
+        self.assertEqual(audit.neighbor_domain("BTN01_SW01.EXAMPLE.COM.", "example.com"), "Our domain")
+        self.assertEqual(audit.neighbor_domain("btn01_sw01.other.com", "example.com"), "Different advertised domain")
+        self.assertEqual(audit.neighbor_domain("btn01_sw01.badexample.com", "example.com"), "Different advertised domain")
+        self.assertEqual(audit.neighbor_domain("btn01_sw01.example.com.other.net", "example.com"), "Different advertised domain")
+        self.assertEqual(audit.neighbor_domain("btn01_sw01", "example.com"), "Neighbor domain undetermined")
+        with self.assertRaises(ValueError):
+            audit.domain_name("bad_domain.com")
+        result, _, _ = self.collect({"show cdp neighbors detail": CDP.replace("switch.example.org", "btn01_sw01.example.com")},
+                                    arg_extra={"domain": ["example.com"]})
+        self.assertEqual(result["interfaces"][0]["Row color"], "Green")
+        self.assertEqual(result["interfaces"][0]["Neighbor"], "btn01_sw01.example.com")
 
     def test_multiple_domains_exact_suffix(self):
         domains = ["example.org", "another.org"]
@@ -402,6 +431,134 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(wb["Readme"]["B3"].value, "example.org, another.org")
             self.assertEqual(wb["Interfaces"]["C9"].value, "20")
             wb.close()
+
+    def test_offline_cli_roundtrip_no_ssh_credentials_or_source_changes(self):
+        from openpyxl import load_workbook
+        original, _, args = self.collect({"show cdp neighbors detail": CDP,
+                                         "show ip arp vrf 20": HEADER + arp("10.20.0.2", "aaaa.bbbb.0001")})
+        source = next(args.output_dir.glob("*.txt"))
+        before = source.read_bytes()
+        output = args.output_dir / "offline"
+        with patch.object(audit.ssh, "ConnectHandler") as connect, \
+             patch.object(audit.ssh, "_prefill_passwords") as passwords, \
+             patch.object(audit.ssh, "_load_devices") as inventory, \
+             patch("builtins.input") as prompt, redirect_stdout(io.StringIO()):
+            status = audit.main(["--from-files", str(source), "--vpn", "20", "--domain", "example.org",
+                                 "--out", str(output), "--append", "replay"])
+        self.assertEqual(status, 0)
+        for mock in (connect, passwords, inventory, prompt):
+            mock.assert_not_called()
+        self.assertEqual(source.read_bytes(), before)
+        self.assertFalse(list(output.glob("*.txt")))
+        wb = load_workbook(output / "vpn-audit-replay.xlsx")
+        ws = wb["Interfaces"]
+        self.assertEqual(ws.max_row, audit.INTERFACES_HEADER_ROW + len(original["interfaces"]))
+        self.assertEqual(ws["A9"].value, "actual-router")
+        self.assertEqual(ws["B9"].value, "192.0.2.10")
+        self.assertEqual(ws["F9"].value, "switch.example.org")
+        self.assertEqual(ws["H9"].value, 1)
+        self.assertEqual(ws["I9"].value, 1)
+        headers = [cell.value for cell in ws[audit.INTERFACES_HEADER_ROW]]
+        self.assertEqual(ws.cell(9, headers.index("Source file") + 1).value, str(source.resolve()))
+        collection_headers = [cell.value for cell in wb["Collection"][1]]
+        status_column = collection_headers.index("Status") + 1
+        self.assertNotIn("missing", [row[status_column - 1].value for row in wb["Collection"].iter_rows(min_row=2)])
+        wb.close()
+
+    def test_offline_missing_arp_is_not_zero(self):
+        _, _, args = self.collect()
+        source = next(args.output_dir.glob("*.txt"))
+        text = source.read_text()
+        start = text.index("\n################################################ (show ip arp vrf 20)")
+        end = text.index("\n################################################", start + 2)
+        source.write_text(text[:start] + text[end:])
+        device = {"hostname": "snapshot", "connect_host": "", "saved_file": source}
+        with patch.object(audit.ssh, "ConnectHandler") as connect, redirect_stdout(io.StringIO()):
+            result = audit.audit_device(device, args)
+        connect.assert_not_called()
+        self.assertIsNone(result["interfaces"][0]["ARP IP count"])
+        self.assertEqual(result["interfaces"][0]["Row color"], "Amber")
+        self.assertIn("missing", result["interfaces"][0]["Collection errors"])
+
+    def test_offline_legacy_blocks_aliases_and_no_invented_address(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "router_pre-status.txt"
+            source.write_text("################################################ version (sh version)\nCisco IOS XE Software, Version 17.15.06\nrouter uptime is 1 day\n"
+                              "################################################ (sh ip arp vrf 20)\n" + HEADER + arp("10.20.0.2", "aaaa.bbbb.0001", "Gi0/0/1.20"))
+            collector = audit.SavedCollector(source)
+            self.assertEqual(collector.ssh_address, "")
+            result, entries = collector.get("arp", audit.parse_arp, "20")
+            self.assertEqual(result.status, "success_with_entries")
+            self.assertEqual(result.timestamp, "")
+            self.assertEqual(entries[0]["Logical interface"], "GigabitEthernet0/0/1.20")
+            self.assertEqual(collector.get("version", lambda text: text)[0].status, "success_with_entries")
+
+    def test_offline_saved_failure_and_fallback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "router.txt"
+            source.write_text("################################################ (show arp vrf 20)\n" + HEADER +
+                              "################################################ (show lldp neighbors detail)\nTimestamp UTC: 2026-11-23T12:00:00+00:00\nStatus: failed\n\nERROR: timed out\n")
+            collector = audit.SavedCollector(source)
+            result, entries = collector.get("arp", audit.parse_arp, "20", "arp_fallback")
+            self.assertEqual(result.status, "success_empty")
+            self.assertEqual(entries, [])
+            self.assertEqual(collector.results[0].status, "missing")
+            failed, entries = collector.get("lldp", lambda text: audit.parse_neighbors(text, "LLDP"))
+            self.assertEqual(failed.status, "failed")
+            self.assertEqual(failed.error, "timed out")
+            self.assertIsNone(entries)
+
+    def test_offline_does_not_mix_vrf_scopes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "router.txt"
+            source.write_text("################################################ (show interfaces Gi0/0/1)\nVRF: 30\nStatus: success_with_entries\nGigabitEthernet0/0/1 is up, line protocol is up\n")
+            collector = audit.SavedCollector(source)
+            collector.vrf = "20"
+            self.assertEqual(collector.run("interface", "GigabitEthernet0/0/1").status, "missing")
+            collector.vrf = "30"
+            self.assertEqual(collector.get("interface", audit.parse_interface, "GigabitEthernet0/0/1")[0].status, "success_with_entries")
+
+    def test_offline_paths_and_unknown_file_format(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "router.txt"
+            source.write_text("unmarked command output")
+            self.assertEqual(len(audit.saved_targets([folder, str(source), str(Path(folder) / "*.txt")])), 1)
+            with self.assertRaises(ValueError):
+                audit.SavedCollector(source)
+            with self.assertRaises(ValueError):
+                audit.saved_targets([str(Path(folder) / "missing*.txt")])
+
+    def test_offline_multiple_vrf_roundtrip(self):
+        original, _, args = self.collect({"show ip arp vrf 20": HEADER + arp("10.20.0.2", "aaaa.bbbb.0001"),
+                                         "show ip arp vrf 30": HEADER + arp("10.30.0.2", "aaaa.bbbb.0002", "Gi0/0/2.30")},
+                                        arg_extra={"vpn": [20, 30]})
+        source = next(args.output_dir.glob("*.txt"))
+        with patch.object(audit.ssh, "ConnectHandler") as connect, redirect_stdout(io.StringIO()):
+            replay = audit.audit_device({"hostname": source.stem, "connect_host": "", "saved_file": source}, args)
+        connect.assert_not_called()
+        def findings(report):
+            return {(row["VRF"], row["Logical interface"]):
+                    (row["ARP IP count"], row["Unique MAC count"], row["Neighbor"], row["Observed finding"], row["Row color"])
+                    for row in report["interfaces"]}
+        self.assertEqual(findings(replay), findings(original))
+
+    def test_offline_bad_file_does_not_block_good_snapshot(self):
+        from openpyxl import load_workbook
+        _, _, args = self.collect()
+        (args.output_dir / "bad.txt").write_text("not a saved command file")
+        with patch.object(audit.ssh, "ConnectHandler") as connect, redirect_stdout(io.StringIO()):
+            status = audit.main(["--from-files", str(args.output_dir), "--vpn", "20", "--domain", "example.org",
+                                 "--out", str(args.output_dir / "report"), "--append", "mixed"])
+        self.assertEqual(status, 1)
+        connect.assert_not_called()
+        wb = load_workbook(args.output_dir / "report" / "vpn-audit-mixed.xlsx")
+        self.assertEqual(wb["Interfaces"].max_row, audit.INTERFACES_HEADER_ROW + 2)
+        headers = [cell.value for cell in wb["Collection"][1]]
+        source_index = headers.index("Source file")
+        status_index = headers.index("Status")
+        self.assertTrue(any(str(row[source_index].value).endswith("bad.txt") and row[status_index].value == "failed"
+                            for row in wb["Collection"].iter_rows(min_row=2)))
+        wb.close()
 
     def test_command_manifest_never_connects_or_prompts(self):
         with patch.object(audit.ssh, "ConnectHandler") as connect, patch("builtins.input") as prompt, redirect_stdout(io.StringIO()) as out:

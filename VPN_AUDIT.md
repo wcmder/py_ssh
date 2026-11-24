@@ -24,11 +24,63 @@ already be available to avoid a password prompt. Passwords are never CLI argumen
 Service VPNs 1–65525 excluding 512 are accepted; transport and management VPNs are
 outside this audit's scope.
 
+## Rebuild a report from saved text files
+
+Use `--from-files` instead of SSH to analyze saved router command output:
+
+```bash
+python vpn_neighbor_audit.py --from-files ./outputs/saved/router1.txt --vpn 20 --domain example.org --out offline-audit
+python vpn_neighbor_audit.py --from-files ./outputs/saved --vpn 20 30 --domain example.org another.org --out offline-audit
+python vpn_neighbor_audit.py --from-files "./outputs/saved/*.txt" --vpn 20 --domain example.org --out offline-audit
+```
+
+The flag accepts one or more `.txt` files, folders (nonrecursive), or quoted globs.
+Files are deduplicated by resolved path. No inventory, keyring/password prompts,
+SSH sessions or active commands are used. VPN/domain prompts still apply when
+those flags are omitted. `--from-files` cannot be combined with `--devices` or
+`--device-groups`; use `--vrf` mappings for named VRFs. `--threads` also controls
+concurrent processing of saved files.
+
+Supported sources are this audit's per-router raw files and `py_ssh.py` raw output
+with `################################################ (command)` or
+`################################################ label (command)` blocks. Unmarked
+terminal text and Excel exports are not accepted. Each file represents one router
+snapshot; different files are not merged, even if their router names agree.
+Use a folder containing the intended snapshots rather than a mixture of raw,
+diff and error files. Unrecognized files are reported in Collection while other
+files continue.
+
+The current parsers, domain rules and MAC thresholds are applied again. All
+required evidence must be present in the saved file: missing commands are
+explicitly marked `missing`, not successful empty results, and affected rows are
+amber. If interface discovery is absent, unknown interfaces cannot be invented.
+A listed fallback is used if the primary block is absent or explicitly unsupported;
+there is no SSH fallback. Saved failed/disabled/unsupported results remain failures;
+old parser errors with output are reparsed so updated parsers can recognize them.
+Original command timestamps are retained when present; older files without them
+leave command timestamps blank. If a command appears repeatedly, the last block
+matching its VRF is used, with unscoped blocks as a fallback. Another VRF's scoped
+block is never substituted.
+
+The source `.txt` files are never overwritten, and offline mode writes no new raw
+`.txt` copies. It creates a fresh workbook with a Source file column at the end of
+each data sheet, without moving the established columns. Source identity/address
+metadata is used when available. Historical audit filenames can supply an IPv4 SSH
+address; otherwise an unavailable address stays blank. `show version` supplies
+the router name when present. New live audit files include explicit router-name
+and SSH-address metadata for reliable future replay.
+
+The summary counts snapshots rather than unique routers in offline mode. Workbook
+timestamps indicate report generation; saved output is not a fresh observation
+of the network. Collection and the Readme identify offline inputs and limitations.
+
+## VPN and domain selection
+
 Select multiple VPNs and accepted domains using spaces or commas:
 
 ```bash
-python vpn_neighbor_audit.py --device-groups routers --vpn 20 30 --domain example.org another.org --threads 5
-python vpn_neighbor_audit.py --device-groups routers --vpn 20,30 --domain example.org,another.org
+python vpn_neighbor_audit.py --devices devices.json --device-groups routers --vpn 20 30 --domain example.org another.org --threads 5 -out vpn-audit
+python vpn_neighbor_audit.py --devices devices.json --device-groups routers --vpn 20,30 --domain example.org,another.org -out vpn-audit
 ```
 
 `--vpns` and `--domains` are aliases, and flags can be repeated. Prompts also
@@ -57,6 +109,11 @@ succeed, followed by `[done]` or an error.
 Authentication/connection failures print one short console error. Full diagnostic
 details remain in Collection and the router's raw text file. A failed login does
 not print `[connected]` or `[done]`.
+Paramiko background SSH errors (including `Invalid packet blocking` tracebacks)
+go to a matching `*-ssh.log` file in the output directory instead of the console.
+The log is created only when errors are logged. These are transport errors, not
+normal missing-VRF responses. Missing or unverified VRFs receive a short console
+message; detailed reasons remain in Collection and raw output.
 
 VPN 20 normally selects a verified VRF named `20`. A named VRF requires an
 explicit mapping, never a guess based on an RD or an interface number:
@@ -128,7 +185,8 @@ fixtures, not live 17.15.6 certification. On a representative router for each
 hardware type, run the manifest commands, check their complete output against
 the raw audit files, and reconcile the workbook's interfaces, counts and neighbor
 ports manually. Collection records exact expanded commands, UTC timestamps,
-success with entries, success empty, disabled, unsupported, failed or parse error.
+success with entries, success empty, disabled, unsupported, failed, parse error,
+or missing (offline inputs).
 An unsupported or unrecognized required command makes affected rows amber.
 
 Reference command families: Cisco's
@@ -173,7 +231,9 @@ or absence of a switch. Failed collection does not receive this finding.
 For `example.org`, `sw.example.org` and `sw.site.example.org` match;
 `sw.badexample.org` and `sw.example.org.other.net` do not. Comparison is
 case-insensitive and tolerates a trailing DNS dot. Short names, IPs, MAC IDs and
-the bare domain do not establish a hostname domain. Cisco serial suffixes in
+the bare domain do not establish a hostname domain. Advertised neighbor names
+may contain underscores (for example `btn01_sw01.example.com`); configured root
+domains still require DNS domain syntax. Cisco serial suffixes in
 parentheses are removed before comparison. DNS lookups, advertised model/vendor,
 system description and VTP domain do not establish domain membership.
 
