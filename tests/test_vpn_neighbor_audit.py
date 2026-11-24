@@ -145,7 +145,7 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(audit.neighbor_domain(name, "example.org"), "Our domain")
         for name in ("sw.badexample.org", "sw.example.org.evil.net", "sw.other.net"):
             self.assertEqual(audit.neighbor_domain(name, "example.org"), "Different advertised domain")
-        for name in ("sw", "example.org", "192.0.2.1", "0011.2233.4455", "", "bad name.example.org"):
+        for name in ("example.org", "192.0.2.1", "0011.2233.4455", "", "bad name.example.org"):
             self.assertEqual(audit.neighbor_domain(name, "example.org"), "Neighbor domain undetermined")
 
     def test_domain_validation(self):
@@ -160,7 +160,7 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(audit.neighbor_domain("btn01_sw01.other.com", "example.com"), "Different advertised domain")
         self.assertEqual(audit.neighbor_domain("btn01_sw01.badexample.com", "example.com"), "Different advertised domain")
         self.assertEqual(audit.neighbor_domain("btn01_sw01.example.com.other.net", "example.com"), "Different advertised domain")
-        self.assertEqual(audit.neighbor_domain("btn01_sw01", "example.com"), "Neighbor domain undetermined")
+        self.assertEqual(audit.neighbor_domain("btn01_sw01", "example.com"), "Neighbor hostname without domain")
         with self.assertRaises(ValueError):
             audit.domain_name("bad_domain.com")
         result, _, _ = self.collect({"show cdp neighbors detail": CDP.replace("switch.example.org", "btn01_sw01.example.com")},
@@ -174,7 +174,7 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(audit.neighbor_domain(name, domains), "Our domain")
         for name in ("sw.badanother.org", "sw.another.org.evil.net", "sw.other.org"):
             self.assertEqual(audit.neighbor_domain(name, domains), "Different advertised domain")
-        self.assertEqual(audit.neighbor_domain("sw", domains), "Neighbor domain undetermined")
+        self.assertEqual(audit.neighbor_domain("sw", domains), "Neighbor hostname without domain")
 
     def test_multiple_input_formats_and_overrides(self):
         args = audit.build_parser().parse_args(["--vpn", "20,30", "--vpn", "20", "--domain", "example.org", "another.org"])
@@ -289,10 +289,12 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(result["interfaces"][0]["Neighbor"], "switch.example.org\nsw.other.org")
         self.assertIn("Cisco", result["interfaces"][0]["System description"])
 
-    def test_unknown_name_amber(self):
+    def test_hostname_without_domain_red(self):
         result, _, _ = self.collect({"show cdp neighbors detail": CDP.replace("switch.example.org", "switch")})
-        self.assertEqual(result["interfaces"][0]["Classification"], "Neighbor domain undetermined")
+        self.assertEqual(result["interfaces"][0]["Classification"], "Neighbor hostname without domain")
         self.assertEqual(result["interfaces"][0]["Neighbor"], "switch")
+        self.assertEqual(result["interfaces"][0]["Row color"], "Red")
+        self.assertEqual(result["interfaces"][0]["Observed finding"], "Neighbor hostname without domain")
 
     def test_blank_arp_is_not_zero(self):
         result, _, _ = self.collect({"show ip arp vrf 20": ""})

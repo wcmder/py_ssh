@@ -125,7 +125,11 @@ def neighbor_domain(name: str, domain: str | list[str]) -> str:
         return "Neighbor domain undetermined"
     except ValueError:
         pass
-    if mac_address(name) or "." not in name:
+    if mac_address(name):
+        return "Neighbor domain undetermined"
+    if "." not in name:
+        if re.fullmatch(r"[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?", name) and re.search(r"[a-z_]", name):
+            return "Neighbor hostname without domain"
         return "Neighbor domain undetermined"
     # Discovery IDs are advertised names, not DNS lookups. Network devices often
     # use underscores; accept those here while keeping configured domains strict.
@@ -509,6 +513,7 @@ def classify(neighbors: list[dict], mac_count: int | None, errors: list[str]) ->
     findings = {n["Domain classification"] for n in neighbors}
     if neighbors:
         finding = ("Different advertised domain" if "Different advertised domain" in findings else
+                   "Neighbor hostname without domain" if "Neighbor hostname without domain" in findings else
                    "Neighbor domain undetermined" if "Neighbor domain undetermined" in findings else "Our domain")
     elif mac_count is None:
         finding = "ARP count unavailable"
@@ -516,7 +521,7 @@ def classify(neighbors: list[dict], mac_count: int | None, errors: list[str]) ->
         finding = "Likely third-party switch" if mac_count > 1 else "Unknown"
     if errors:
         return "Amber", "Collection incomplete", finding
-    color = {"Our domain": "Green", "Different advertised domain": "Red", "Neighbor domain undetermined": "Amber",
+    color = {"Our domain": "Green", "Different advertised domain": "Red", "Neighbor hostname without domain": "Red", "Neighbor domain undetermined": "Amber",
              "Likely third-party switch": "Red", "Unknown": "Neutral"}.get(finding, "Amber")
     observed = finding
     if color == "Neutral":
@@ -831,9 +836,9 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
             ws.row_dimensions[1].height = 24
             legend = [
                 ("Green", "Neighbor hostname matches any configured domain, including its subdomains."),
-                ("Red", "Different advertised domain, OR no neighbor and 2+ distinct non-router MACs on one interface: Likely third-party switch (unconfirmed)."),
+                ("Red", "Different/no advertised hostname domain, OR no neighbor and 2+ non-router MACs on one interface: Likely third-party switch (unconfirmed)."),
                 ("Neutral", "No neighbor and 0–1 distinct non-router MACs on one interface: Unknown; likely not a switch. White fill appears uncolored."),
-                ("Amber", "Neighbor domain undetermined, or collection disabled, unsupported, incomplete or failed. Overrides other colors."),
+                ("Amber", "Neighbor name missing or unusable, or collection disabled, unsupported, incomplete or failed. Overrides other colors."),
             ]
             for row, (color, meaning) in enumerate(legend, 2):
                 ws.cell(row, 1, "Neutral (no color)" if color == "Neutral" else color)
@@ -858,9 +863,9 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
         ["Input mode", "Saved command output (offline)" if getattr(args, "from_files", None) else "SSH"],
         ["Threshold", "More than 1 distinct complete, non-router MAC on the SAME logical interface; parent ports are only used for neighbor matching."],
         ["Green", "Advertised neighbor hostname has exact dot-delimited domain suffix."],
-        ["Red", "Different advertised domain, or no neighbor with >1 unique MAC: Likely third-party switch."],
+        ["Red", "Different advertised domain, hostname without a domain, or no neighbor with >1 unique MAC: Likely third-party switch."],
         ["Neutral", "No neighbor and 0–1 unique MACs: Unknown. Observed finding reports 0 hosts or 1 host found, likely not a switch. Device type/model cannot be determined."],
-        ["Amber", "Unknown neighbor domain or incomplete collection. Observed finding retains known evidence."],
+        ["Amber", "Neighbor identity missing/unusable or incomplete collection. Observed finding retains known evidence."],
         ["Unknown counts", "Blank cells mean unavailable counts; zero requires successful parsed ARP and local identity collection."],
         ["ARP limits", "Cached IPv4 only. Proxy ARP, stale entries, virtualization and multiple IPs per MAC limit inference. Device type/model and switch presence are not confirmed."],
         ["Neighbor limits", "Advertised names are unverified claims. Parent-port evidence does not prove connectivity in an individual VLAN. Discovery disabled/unsupported cannot establish absence."],

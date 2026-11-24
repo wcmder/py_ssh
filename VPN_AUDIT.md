@@ -219,9 +219,10 @@ exported, including down interfaces and those without ARP/neighbor entries.
 | --- | --- |
 | Green | Advertised hostname has our exact dot-delimited DNS suffix: Our domain |
 | Red | Neighbor advertises a determinable different domain |
+| Red | Neighbor has a hostname without a domain: Neighbor hostname without domain |
 | Red | Successful no-neighbor collection and **more than 1 unique complete non-router MAC on the same logical interface**: Likely third-party switch |
 | Neutral | Successful no-neighbor collection and 0–1 unique MACs: Unknown |
-| Amber | Neighbor domain undetermined, or required collection incomplete |
+| Amber | Neighbor name missing/unusable or domain otherwise undetermined, or required collection incomplete |
 
 For neutral Unknown rows, Observed finding reads `1 host found, likely not a switch`
 when one non-router MAC is counted, or `0 hosts found, likely not a switch` when
@@ -230,15 +231,16 @@ or absence of a switch. Failed collection does not receive this finding.
 
 For `example.org`, `sw.example.org` and `sw.site.example.org` match;
 `sw.badexample.org` and `sw.example.org.other.net` do not. Comparison is
-case-insensitive and tolerates a trailing DNS dot. Short names, IPs, MAC IDs and
-the bare domain do not establish a hostname domain. Advertised neighbor names
+case-insensitive and tolerates a trailing DNS dot. A short hostname without a
+domain is red. Missing names, IPs, MAC IDs and the bare domain do not establish
+a hostname domain and remain amber. Advertised neighbor names
 may contain underscores (for example `btn01_sw01.example.com`); configured root
 domains still require DNS domain syntax. Cisco serial suffixes in
 parentheses are removed before comparison. DNS lookups, advertised model/vendor,
 system description and VTP domain do not establish domain membership.
 
 All protocol advertisements remain visible. Any different-domain neighbor makes
-the interface red; otherwise an unresolved name makes it amber; otherwise it is
+the interface red; a hostname without a domain also makes it red. Otherwise an unresolved name makes it amber; otherwise it is
 green. Required collection failure overrides the row to amber while Observed
 finding retains known neighbor evidence. If discovery cannot establish absence,
 Observed finding says `Neighbor absence unverified`. Both protocols must be
