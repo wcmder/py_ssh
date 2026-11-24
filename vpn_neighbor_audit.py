@@ -582,8 +582,16 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
         collector.vrf = ""
     except Exception as exc:
         report["error"] = "; ".join(issues + [str(exc)])
+        if "auth" in type(exc).__name__.lower() or re.search(r"authenticat|permission denied|access denied", str(exc), re.I):
+            console_error = "Authentication failed"
+        elif conn is None:
+            console_error = "SSH connection failed"
+        elif collector is None:
+            console_error = "Enable authentication failed"
+        else:
+            console_error = "Collection failed"
         with ssh.print_lock:
-            print(f"[error] {host} :: {exc}", flush=True)
+            print(f"[error] {host} | {device['connect_host']}: {console_error}", flush=True)
     finally:
         if conn:
             try:
@@ -602,8 +610,9 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
         # Include address in the label so duplicate inventory hostnames do not collide.
         label = f"{host}-{device['connect_host']}"
         ssh._write_output(args.output_dir, label, raw, args.append, args.prefix)
-    with ssh.print_lock:
-        print(f"[done] {host}: {len(report['interfaces'])} selected interfaces", flush=True)
+    if collector is not None:
+        with ssh.print_lock:
+            print(f"[done] {host}: {len(report['interfaces'])} selected interfaces", flush=True)
     return report
 
 

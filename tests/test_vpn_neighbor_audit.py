@@ -353,15 +353,21 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(result["arp"][0]["Disposition"], "Router-owned IP")
 
     def test_failed_connection_has_collection_summary(self):
-        with patch.object(audit.ssh, "ConnectHandler", side_effect=RuntimeError("Authentication failed")):
+        detail = "Authentication failed\nCommon causes: incorrect credentials\nDevice settings: additional diagnostic text"
+        with patch.object(audit.ssh, "ConnectHandler", side_effect=RuntimeError(detail)):
             # collect's inner patch deliberately owns ConnectHandler; call directly here.
-            with tempfile.TemporaryDirectory() as folder, redirect_stdout(io.StringIO()):
+            with tempfile.TemporaryDirectory() as folder, redirect_stdout(io.StringIO()) as console:
                 args = argparse.Namespace(vpn=20, domain="example.org", vrf=None, device_type="cisco_ios", timeout=1,
                                           per_cmd_timeout=1, output_dir=Path(folder), prefix="audit", append=None)
                 result = audit.audit_device({"hostname": "r1", "connect_host": "192.0.2.1", "username": "u", "password": "p"}, args)
                 self.assertIn("Authentication failed", result["collection"][0]["Collection errors"])
                 self.assertEqual(result["collection"][0]["Status"], "failed")
                 self.assertFalse(result["interfaces"])
+                self.assertIn("[error] r1 | 192.0.2.1: Authentication failed", console.getvalue())
+                self.assertNotIn("Common causes", console.getvalue())
+                self.assertNotIn("[done]", console.getvalue())
+                self.assertIn(detail, result["collection"][0]["Collection errors"])
+                self.assertIn(detail, next(Path(folder).glob("*.txt")).read_text())
 
     def test_cli_prompts_and_writes_report(self):
         from openpyxl import load_workbook

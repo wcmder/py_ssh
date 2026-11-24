@@ -54,6 +54,9 @@ Use `--threads 5` to collect from up to five routers concurrently. Commands for
 each router run sequentially in its own SSH session. Console progress shows
 `[connect]`, then `[connected]` after SSH login and optional enable authentication
 succeed, followed by `[done]` or an error.
+Authentication/connection failures print one short console error. Full diagnostic
+details remain in Collection and the router's raw text file. A failed login does
+not print `[connected]` or `[done]`.
 
 VPN 20 normally selects a verified VRF named `20`. A named VRF requires an
 explicit mapping, never a guess based on an RD or an interface number:
