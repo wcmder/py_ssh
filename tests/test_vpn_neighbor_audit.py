@@ -61,6 +61,26 @@ def arp(ip, mac, interface="GigabitEthernet0/0/1.20", age="5"):
     return f"Internet  {ip}  {age}  {mac}  ARPA  {interface}\n"
 
 
+def port_channel_fixture(logical="Port-channel1"):
+    root = "interface Port-channel1\n no ip address\n!\n" if "." in logical else ""
+    config = root + f"interface {logical}\n vrf forwarding 20\n ip address 10.20.0.1 255.255.255.0\n!\n"
+    for number, group in ((1, 1), (2, 1), (3, 2)):
+        config += f"interface GigabitEthernet0/0/{number}\n channel-group {group} mode active\n!\n"
+    return {
+        "show vrf": f"Name Default RD Protocols Interfaces\n20 1:20 ipv4 {logical}",
+        "show ip vrf interfaces": f"Interface IP-Address VRF Protocol\n{logical} 10.20.0.1 20 up",
+        "show sdwan running-config | section ^interface": config,
+        "show etherchannel summary": "Group Port-channel Protocol Ports\n1 Po1(RU) LACP Gi0/0/1(P) Gi0/0/2(P)\n2 Po2(RU) LACP Gi0/0/3(P)",
+        f"show ip interface {logical}": f"{logical} is up, line protocol is up\n Internet address is 10.20.0.1/24",
+        "show ip arp vrf 20": HEADER + arp("10.20.0.1", "0011.2233.4455", logical) +
+            arp("10.20.0.2", "aaaa.bbbb.0001", logical) + arp("10.20.0.3", "aaaa.bbbb.0002", logical),
+        "show cdp neighbors detail": CDP,
+        "show lldp neighbors detail": LLDP.replace("Local Intf: Gi0/0/1", "Local Intf: Gi0/0/2"),
+        "show cdp interface": "GigabitEthernet0/0/1 is up, line protocol is up\n Sending CDP packets every 60 seconds\nGigabitEthernet0/0/2 is up, line protocol is up\n Sending CDP packets every 60 seconds",
+        "show lldp interface": "GigabitEthernet0/0/1:\n Tx: enabled\n Rx: enabled\nGigabitEthernet0/0/2:\n Tx: enabled\n Rx: enabled",
+    }
+
+
 class FakeConnection:
     def __init__(self, overrides=None):
         self.overrides = overrides or {}
@@ -104,6 +124,90 @@ class FakeConnection:
 
 
 class AuditTests(unittest.TestCase):
+    def test_port_channel_member_neighbors_keep_bundle_arp_counts(self):
+        for logical in ("Port-channel1", "Port-channel1.20"):
+            with self.subTest(logical=logical):
+                result, conn, _ = self.collect(port_channel_fixture(logical))
+                self.assertFalse(result["error"], result["error"])
+                self.assertEqual(len(result["interfaces"]), 1)
+                row = result["interfaces"][0]
+                self.assertEqual(row["Logical interface"], logical)
+                self.assertEqual((row["ARP IP count"], row["Unique MAC count"]), (2, 2))
+                self.assertEqual(row["Neighbor"], "switch.example.org")
+                self.assertEqual(row["Row color"], "Green")
+                self.assertEqual(row["Physical parent"], "GigabitEthernet0/0/1, GigabitEthernet0/0/2")
+                self.assertEqual({n["Local interface"] for n in result["neighbors"]}, {"GigabitEthernet0/0/1", "GigabitEthernet0/0/2"})
+                self.assertEqual(conn.sent.count("show etherchannel summary"), 1)
+
+    def test_etherchannel_summary_flags_and_wrapped_members(self):
+        text = "Group Port-channel Protocol Ports\n1 Po1(RU) LACP Gi0/0/1(P)\n Gi0/0/2(bndl) Gi0/0/3(hot-sby) Gi0/0/4(D)\n2 Po2(RD) LACP Gi0/0/5(P)"
+        bundles = audit.parse_etherchannels(text)
+        self.assertEqual(bundles["Port-channel1"]["active"], {"GigabitEthernet0/0/1", "GigabitEthernet0/0/2"})
+        self.assertEqual(len(bundles["Port-channel1"]["members"]), 4)
+        self.assertFalse(bundles["Port-channel2"]["active"])
+        self.assertEqual(audit.parse_etherchannels("Number of channel-groups in use: 0"), {})
+        with self.assertRaises(ValueError):
+            audit.parse_etherchannels("unrecognized output")
+
+    def test_port_channel_multiple_vrfs_collect_summary_once(self):
+        overrides = port_channel_fixture("Port-channel1.20")
+        overrides["show sdwan running-config | section ^interface"] += "interface Port-channel1.30\n vrf forwarding 30\n ip address 10.30.0.1 255.255.255.0\n!\n"
+        overrides["show ip interface Port-channel1.30"] = "Port-channel1.30 is up, line protocol is up\n Internet address is 10.30.0.1/24"
+        overrides["show ip arp vrf 30"] = HEADER + arp("10.20.0.1", "aaaa.bbbb.0003", "Po1.30")
+        result, conn, _ = self.collect(overrides, arg_extra={"vpn": [20, 30]})
+        self.assertFalse(result["error"], result["error"])
+        self.assertEqual(conn.sent.count("show etherchannel summary"), 1)
+        self.assertEqual([(row["VRF"], row["Unique MAC count"], row["Row color"]) for row in result["interfaces"]],
+                         [("20", 2, "Green"), ("30", 1, "Green")])
+
+    def test_port_channel_no_active_members_does_not_infer_switch(self):
+        overrides = port_channel_fixture()
+        overrides.update({"show etherchannel summary": "Group Port-channel Protocol Ports\n1 Po1(RD) LACP Gi0/0/1(D) Gi0/0/2(D)",
+                          "show cdp neighbors detail": "Total cdp entries displayed : 0",
+                          "show lldp neighbors detail": "Total entries displayed: 0"})
+        result, _, _ = self.collect(overrides)
+        row = result["interfaces"][0]
+        self.assertEqual(row["Row color"], "Amber")
+        self.assertEqual(row["Observed finding"], "Neighbor absence unverified")
+        self.assertEqual(row["Unique MAC count"], 2)
+
+    def test_port_channel_does_not_match_another_bundles_neighbor(self):
+        overrides = port_channel_fixture()
+        overrides.update({"show cdp neighbors detail": CDP.replace("GigabitEthernet0/0/1,", "GigabitEthernet0/0/3,").replace("example.org", "other.org"),
+                          "show lldp neighbors detail": "Total entries displayed: 0"})
+        result, _, _ = self.collect(overrides)
+        self.assertEqual(result["interfaces"][0]["Neighbor"], "Unknown")
+        self.assertEqual(result["interfaces"][0]["Observed finding"], "Likely third-party switch")
+        self.assertFalse(result["neighbors"])
+
+    def test_port_channel_failed_membership_is_amber_counts_still_available(self):
+        overrides = port_channel_fixture()
+        overrides["show etherchannel summary"] = "% Invalid input detected at '^' marker."
+        result, _, _ = self.collect(overrides)
+        row = result["interfaces"][0]
+        self.assertEqual(row["Row color"], "Amber")
+        self.assertEqual(row["Neighbor"], "switch.example.org")
+        self.assertEqual(row["Unique MAC count"], 2)
+        self.assertIn("show etherchannel summary: unsupported", row["Collection errors"])
+
+    def test_port_channel_replay_and_missing_membership(self):
+        original, _, args = self.collect(port_channel_fixture())
+        source = next(args.output_dir.glob("*.txt"))
+        device = {"hostname": source.stem, "connect_host": "", "saved_file": source}
+        with redirect_stdout(io.StringIO()):
+            replay = audit.audit_device(device, args)
+        self.assertEqual(replay["interfaces"][0]["Neighbor"], original["interfaces"][0]["Neighbor"])
+        self.assertEqual(replay["interfaces"][0]["Row color"], "Green")
+        text = source.read_text()
+        start = text.index("\n################################################ (show etherchannel summary)")
+        end = text.index("\n################################################", start + 2)
+        source.write_text(text[:start] + text[end:])
+        with redirect_stdout(io.StringIO()):
+            missing = audit.audit_device(device, args)
+        self.assertEqual(missing["interfaces"][0]["Row color"], "Amber")
+        self.assertEqual(missing["interfaces"][0]["Unique MAC count"], 2)
+        self.assertIn("show etherchannel summary: missing", missing["interfaces"][0]["Collection errors"])
+
     def test_transport_traceback_goes_to_file_not_console(self):
         logger = logging.getLogger("paramiko")
         previous = (logger.handlers[:], logger.level, logger.propagate)

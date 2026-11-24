@@ -157,6 +157,7 @@ command-file execution in this audit.
 | VPN/VRF definitions | `show sdwan running-config \| section ^vrf definition` | Every router; fallback `show running-config \| section ^vrf definition` |
 | Interface configuration | `show sdwan running-config \| section ^interface` | Every router; fallback `show running-config \| section ^interface` |
 | ARP mapping | `show ip arp vrf <VRF>` | Selected VRF; fallback `show arp vrf <VRF>` |
+| Port-channel members | `show etherchannel summary` | Once per router when selected interfaces include a port-channel or its subinterfaces |
 | Local MAC/status | `show interfaces <INTERFACE>` | Each selected logical interface and unique physical parent |
 | Local IP addresses | `show ip interface <INTERFACE>` | Each selected logical interface |
 | CDP global status | `show cdp` | Every router, regardless of ARP count |
@@ -210,9 +211,31 @@ Two MACs on `Gi0/0/1.20` cross the threshold on that interface; one MAC on
 `Gi0/0/1.21` does not. One MAC on each interface is never combined into two.
 Subinterfaces retain separate counts even when their physical parent is shared.
 
-Neighbors are matched to the logical interface first, then its physical parent.
-No physical parent is invented for SVIs, BDI,
-loopbacks, tunnels or port channels. Every discovered selected interface is
+Neighbors on ordinary interfaces are matched to the logical interface first,
+then its physical parent. For a port-channel or port-channel subinterface,
+neighbors advertised on the bundle, its base port-channel, and its physical member
+ports are associated with that logical interface. `show etherchannel summary`
+provides operational membership, including wrapped member rows and the IOS XE
+`P`, `bndl`, and `bndl-act` active-member formats. Interface `channel-group`
+configuration provides supporting membership evidence. The summary is collected
+once per router, and active members must have discovery verified to establish
+complete collection. Missing/unsupported/unrecognized membership, no active
+bundled members, or conflicting membership makes affected rows amber; configured
+member neighbors remain visible as observed evidence when available.
+
+ARP IP/MAC counts remain exclusively on the original logical port-channel or
+subinterface; counts are never copied to or combined across member ports. The
+Physical parent field lists known member ports, and the Neighbors sheet's Local
+interface identifies the port that advertised each neighbor. All member-port
+advertisements are retained; one matching neighbor does not hide another member's
+nonmatching neighbor. Saved-file replay also needs the EtherChannel summary to
+verify membership; old files missing it are explicitly incomplete for bundles.
+Cisco documents the command in its
+[SD-WAN EtherChannels guide](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/17-x/systems-interfaces/systems-interfaces-guide-17-x/etherchann.html);
+the actual 17.15.6 platform output still requires verification.
+
+No physical parent is invented for SVIs, BDI, loopbacks or tunnels.
+Every discovered selected interface is
 exported, including down interfaces and those without ARP/neighbor entries.
 
 | Color | Rule / classification |

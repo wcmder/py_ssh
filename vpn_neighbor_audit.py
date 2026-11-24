@@ -32,6 +32,7 @@ COMMANDS = [
     ("interfaces_fallback", "show running-config | section ^interface", "Fallback on unsupported"),
     ("arp", "show ip arp vrf <VRF>", "Selected VRF: IP/MAC/interface mapping"),
     ("arp_fallback", "show arp vrf <VRF>", "Fallback on unsupported"),
+    ("etherchannel", "show etherchannel summary", "When selected interfaces include port-channels: identify physical members"),
     ("interface", "show interfaces <INTERFACE>", "Each selected interface and unique physical parent"),
     ("ip_interface", "show ip interface <INTERFACE>", "Each selected logical interface: local addresses"),
     ("cdp_status", "show cdp", "Always: global CDP availability"),
@@ -199,6 +200,17 @@ class Collector:
         self.results: list[Result] = []
         self.broken = False
         self.vrf = ""
+        self.bundle_data = None
+
+    def bundles(self) -> tuple[Result, Any]:
+        if self.bundle_data is None:
+            scope = self.vrf
+            self.vrf = ""
+            try:
+                self.bundle_data = self.get("etherchannel", parse_etherchannels)
+            finally:
+                self.vrf = scope
+        return self.bundle_data
 
     def run(self, key: str, value: str = "") -> Result:
         if value and not SAFE_NAME.fullmatch(value):
@@ -389,6 +401,40 @@ def parse_vrf_config(text: str) -> set[str]:
     return names
 
 
+def port_channel(interface: str) -> str:
+    return interface.split(".", 1)[0] if re.fullmatch(r"Port-channel\d+(?:\.\d+)?", interface) else ""
+
+
+def parse_etherchannels(text: str) -> dict[str, dict]:
+    if not re.search(r"Group\s+Port-channel\s+Protocol\s+Ports", text, re.I):
+        if re.search(r"Number of channel-groups in use:\s*0\b", text, re.I):
+            return {}
+        raise ValueError("Unrecognized EtherChannel summary header")
+    bundles = {}
+    current = ""
+    in_use = False
+    for line in text.splitlines():
+        group = re.match(r"\s*\d+\s+((?:Po|Port-channel)\d+)\(([^)]+)\)", line, re.I)
+        if group:
+            current = interface_name(group.group(1))
+            in_use = "U" in group.group(2)
+            bundles[current] = {"members": set(), "active": set()}
+        if not current:
+            continue
+        for name, state in re.findall(r"([A-Za-z-]+\d[\w/.:_-]*)\(([^)]+)\)", line):
+            member = interface_name(name)
+            if member.startswith("Port-channel"):
+                continue
+            if physical_parent(member) != member:
+                raise ValueError(f"Unrecognized EtherChannel member: {name}")
+            bundles[current]["members"].add(member)
+            if in_use and state.lower() in {"p", "bndl", "bndl-act"}:
+                bundles[current]["active"].add(member)
+    if not bundles and not re.search(r"Number of channel-groups in use:\s*0\b", text, re.I):
+        raise ValueError("EtherChannel header found but no recognizable channel rows")
+    return bundles
+
+
 def parse_config(text: str) -> dict[str, dict]:
     blocks = re.split(r"(?m)^interface\s+", text)[1:]
     if not blocks:
@@ -402,8 +448,10 @@ def parse_config(text: str) -> dict[str, dict]:
         virtual = set(re.findall(r"(?m)^\s+(?:standby\s+(?:\d+\s+)?ip|vrrp\s+\d+\s+ip)\s+(\d+\.\d+\.\d+\.\d+)", block))
         # Include configured local MACs; operational output supplies burned-in/active MACs.
         macs = {mac_address(x) for x in re.findall(r"(?m)^\s+mac-address\s+(\S+)", block)} - {""}
+        channel = re.search(r"(?m)^\s+channel-group\s+(\d+)\b", block)
         out[name] = {"vrf": vrf.group(1) if vrf else "", "ips": ips | virtual,
-                     "macs": macs, "config": block}
+                     "macs": macs, "config": block,
+                     "channel_group": "Port-channel" + channel.group(1) if channel else ""}
     return out
 
 
@@ -561,19 +609,41 @@ def audit_vrf(vpn: int, vrf: str, collector: Collector, report: dict,
     own_ips = set().union(*(c["ips"] for c in configs.values() if c["vrf"] == vrf))
     own_macs = set().union(*(c["macs"] for c in configs.values())) if configs else set()
     interface_errors = {i: [] for i in selected}
+    bundle_errors = {i: [] for i in selected}
+    member_ports = {}
+    active_ports = {}
+    if any(port_channel(i) for i in selected):
+        bundle_result, bundles = collector.bundles()
+        for interface in selected:
+            bundle = port_channel(interface)
+            if not bundle:
+                continue
+            configured = {name for name, config in configs.items() if config.get("channel_group") == bundle}
+            operational = (bundles or {}).get(bundle)
+            member_ports[interface] = operational["members"] if operational else configured
+            active_ports[interface] = operational["active"] if operational else set()
+            if bundle_result.status not in GOOD:
+                bundle_errors[interface].append(f"{bundle_result.command}: {bundle_result.status}: {bundle_result.error}")
+            elif not operational or not operational["members"]:
+                bundle_errors[interface].append(f"{bundle}: member ports not verified in EtherChannel summary")
+            elif not operational["active"]:
+                bundle_errors[interface].append(f"{bundle}: no active bundled member ports verified")
+            if operational and any(configs.get(member, {}).get("channel_group") not in {None, "", bundle}
+                                   for member in operational["members"]):
+                bundle_errors[interface].append(f"{bundle}: operational membership conflicts with interface configuration")
     for interface in selected:
         if interface not in configs:
             interface_errors[interface].append("Interface missing from configuration; local/virtual ownership cannot be verified")
-    for interface in sorted(selected | ({physical_parent(i) for i in selected} - {""})):
+    for interface in sorted(selected | ({physical_parent(i) or port_channel(i) for i in selected} - {""})):
         result, data = collector.get("interface", parse_interface, interface)
         if data:
             if interface in selected:
                 own_ips.update(data["ips"])
             own_macs.update(data["macs"])
         for logical in selected:
-            if interface in {logical, physical_parent(logical)} and result.status not in GOOD:
+            if interface in {logical, physical_parent(logical), port_channel(logical)} and result.status not in GOOD:
                 interface_errors[logical].append(f"{result.command}: {result.status}: {result.error}")
-            if interface == physical_parent(logical) and data and not data["macs"]:
+            if interface == (physical_parent(logical) or port_channel(logical)) and data and not data["macs"]:
                 interface_errors[logical].append(f"Local MAC unavailable for {interface}")
     for interface in sorted(selected):
         result, addresses = collector.get("ip_interface", parse_ip_interface, interface)
@@ -590,18 +660,23 @@ def audit_vrf(vpn: int, vrf: str, collector: Collector, report: dict,
                   "Router-owned MAC" if entry["MAC address"] in own_macs else
                   "Outside selected interfaces" if entry["Logical interface"] not in selected else "Included")
         # Well-known HSRP/VRRP MACs alone do not prove local ownership.
-        row = {**base, **entry, "Physical parent": physical_parent(entry["Logical interface"]), "Disposition": reason}
+        parent = ", ".join(sorted(member_ports.get(entry["Logical interface"], set()))) or physical_parent(entry["Logical interface"])
+        row = {**base, **entry, "Physical parent": parent, "Disposition": reason}
         report["arp"].append(row)
     for interface in sorted(selected):
-        errors = issues + interface_errors[interface]
-        parent = physical_parent(interface)
+        errors = issues + interface_errors[interface] + bundle_errors[interface]
+        parent = ", ".join(sorted(member_ports.get(interface, set()))) or physical_parent(interface)
         matched = []
         for proto in ("CDP", "LLDP"):
             exact = [n for n in neighbors if n["Protocol"] == proto and n["Local interface"] == interface]
-            candidates = exact or [n for n in neighbors if n["Protocol"] == proto and parent and n["Local interface"] == parent]
+            if port_channel(interface):
+                ports = member_ports.get(interface, set()) | {interface, port_channel(interface)}
+                candidates = [n for n in neighbors if n["Protocol"] == proto and n["Local interface"] in ports]
+            else:
+                candidates = exact or [n for n in neighbors if n["Protocol"] == proto and parent and n["Local interface"] == parent]
             for neighbor in candidates:
                 n = {**base, **neighbor, "Logical interface": interface, "Physical parent": parent,
-                     "Match scope": "Logical interface" if exact else "Physical parent",
+                     "Match scope": "Port-channel member" if port_channel(interface) and neighbor["Local interface"] in member_ports.get(interface, set()) else "Logical interface" if exact else "Physical parent",
                      "Domain classification": neighbor_domain(neighbor["Neighbor name"], args.domain)}
                 matched.append(n)
                 report["neighbors"].append(n)
@@ -609,14 +684,18 @@ def audit_vrf(vpn: int, vrf: str, collector: Collector, report: dict,
             for r in (sr, ir, nr):
                 if r.status not in GOOD:
                     errors.append(f"{r.command}: {r.status}: {r.error}")
-            if not candidates and not discovery_enabled(proto, interface, sr, ir):
+            if port_channel(interface):
+                for member in sorted(active_ports.get(interface, set())):
+                    if not discovery_enabled(proto, member, sr, ir):
+                        errors.append(f"{proto} receive/discovery not verified on port-channel member {member}")
+            elif not candidates and not discovery_enabled(proto, interface, sr, ir):
                 errors.append(f"{proto} receive/discovery not verified on {parent or interface}")
         entries = [a for a in report["arp"] if a["Logical interface"] == interface and a["Disposition"] == "Included"]
         trusted = count_trusted and not interface_errors[interface]
         ip_count = len({a["IP address"] for a in entries}) if trusted else None
         mac_count = len({a["MAC address"] for a in entries}) if trusted else None
         color, classification, finding = classify(matched, mac_count, errors)
-        if not matched and any(e.startswith(("show cdp", "show lldp", "CDP receive", "LLDP receive")) for e in errors):
+        if not matched and (bundle_errors[interface] or any(e.startswith(("show cdp", "show lldp", "CDP receive", "LLDP receive")) for e in errors)):
             finding = "Neighbor absence unverified"
         def join(key: str) -> str:
             return "\n".join(f"{n['Protocol']}: {n[key]}" for n in matched)
