@@ -145,8 +145,11 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(audit.neighbor_domain(name, "example.org"), "Our domain")
         for name in ("sw.badexample.org", "sw.example.org.evil.net", "sw.other.net"):
             self.assertEqual(audit.neighbor_domain(name, "example.org"), "Different advertised domain")
-        for name in ("example.org", "192.0.2.1", "0011.2233.4455", "", "bad name.example.org"):
-            self.assertEqual(audit.neighbor_domain(name, "example.org"), "Neighbor domain undetermined")
+        for name in ("example.org", "192.0.2.1", "0011.2233.4455", "bad name.example.org", "001122334455", "12345"):
+            finding = audit.neighbor_domain(name, "example.org")
+            self.assertEqual(finding, "Neighbor name does not match configured domains")
+            self.assertEqual(audit.classify([{"Domain classification": finding}], 1, [])[0], "Red")
+        self.assertEqual(audit.neighbor_domain("", "example.org"), "Neighbor domain undetermined")
 
     def test_domain_validation(self):
         self.assertEqual(audit.domain_name(" .EXAMPLE.ORG. "), "example.org")
