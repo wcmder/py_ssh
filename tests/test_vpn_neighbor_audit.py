@@ -257,11 +257,13 @@ class AuditTests(unittest.TestCase):
                                     "show lldp neighbors detail": LLDP.replace("switch.example.org", "sw.other.org")})
         self.assertEqual(result["interfaces"][0]["Row color"], "Red")
         self.assertEqual(result["interfaces"][0]["Classification"], "Different advertised domain")
+        self.assertEqual(result["interfaces"][0]["Neighbor"], "switch.example.org\nsw.other.org")
         self.assertIn("Cisco", result["interfaces"][0]["System description"])
 
     def test_unknown_name_amber(self):
         result, _, _ = self.collect({"show cdp neighbors detail": CDP.replace("switch.example.org", "switch")})
         self.assertEqual(result["interfaces"][0]["Classification"], "Neighbor domain undetermined")
+        self.assertEqual(result["interfaces"][0]["Neighbor"], "switch")
 
     def test_blank_arp_is_not_zero(self):
         result, _, _ = self.collect({"show ip arp vrf 20": ""})
@@ -418,7 +420,7 @@ class AuditTests(unittest.TestCase):
             self.assertIn("VRF", [cell.value for cell in wb[sheet][header_row]])
         self.assertEqual(wb["Interfaces"]["H9"].value, 0)
         self.assertEqual(wb["Interfaces"]["H9"].data_type, "n")
-        self.assertEqual(wb["Interfaces"]["F8"].value, "Classification")
+        self.assertEqual(wb["Interfaces"]["F8"].value, "Neighbor")
         self.assertEqual(wb["Interfaces"]["H8"].value, "ARP IP count")
         self.assertEqual(wb["Interfaces"]["G8"].value, "Observed finding")
         self.assertEqual(wb["Interfaces"]["F9"].value, "switch.example.org")
@@ -430,7 +432,7 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(wb["Neighbors"]["H2"].value, "=1+1")
         self.assertEqual(wb["Neighbors"]["H2"].data_type, "s")
         self.assertEqual(wb["Interfaces"].freeze_panes, "F9")
-        self.assertEqual(wb["Interfaces"].auto_filter.ref, "A8:R10")
+        self.assertEqual(wb["Interfaces"].auto_filter.ref, "A8:Q10")
         self.assertEqual(wb["Interfaces"]["A1"].value, "Color meaning")
         for row, color in enumerate(("Green", "Red", "Neutral", "Amber"), 2):
             self.assertEqual(wb["Interfaces"].cell(row, 1).fill.fgColor.rgb, "00" + audit.COLORS[color])

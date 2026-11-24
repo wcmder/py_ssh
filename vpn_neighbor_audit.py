@@ -485,8 +485,8 @@ def audit_vrf(vpn: int, vrf: str, collector: Collector, report: dict,
             "Neighbor name": join("Neighbor name"), "Neighbor port": join("Neighbor port"),
             "Advertised platform": join("Advertised platform"), "System description": join("System description"),
             "Match scope": join("Match scope"), "Classification": classification, "Observed finding": finding,
-            "Matched hostname": "\n".join(dict.fromkeys(n["Neighbor name"] for n in matched
-                if n["Domain classification"] == "Our domain")),
+            "Neighbor": "\n".join(dict.fromkeys(n["Neighbor name"] for n in matched
+                if n["Neighbor name"].strip())) or "Unknown",
             "Row color": color, "Collection errors": "\n".join(dict.fromkeys(errors)), "Timestamp UTC": now()})
     if not selected:
         report["error"] = "; ".join(issues)
@@ -620,9 +620,9 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
     wb = Workbook()
     wb.remove(wb.active)
     sheets = [
-        ("Interfaces", "interfaces", BASE_COLUMNS + ["Classification", "Observed finding", "ARP IP count", "Unique MAC count", "Neighbor protocol", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Row color", "Collection errors", "Timestamp UTC"]),
+        ("Interfaces", "interfaces", BASE_COLUMNS + ["Neighbor", "Observed finding", "ARP IP count", "Unique MAC count", "Neighbor protocol", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Row color", "Collection errors", "Timestamp UTC"]),
         ("ARP Details", "arp", BASE_COLUMNS + ["IP address", "MAC address", "Age", "Complete", "Disposition"]),
-        ("Neighbors", "neighbors", BASE_COLUMNS + ["Protocol", "Local interface", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Match scope", "Domain classification"]),
+        ("Neighbors", "neighbors", BASE_COLUMNS + ["Protocol", "Local interface", "Neighbor name", "Neighbor port", "Advertised platform", "System description", "Domain classification"]),
         ("Collection", "collection", ["Router name", "SSH address", "VRF", "Command", "Purpose", "Status", "Collection errors", "Timestamp UTC"]),
     ]
     for title, key, columns in sheets:
@@ -634,8 +634,6 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
         for report in reports:
             for row in report[key]:
                 values = [row.get(col) for col in columns]
-                if key == "interfaces" and row["Classification"] == "Our domain":
-                    values[columns.index("Classification")] = row.get("Matched hostname") or row["Classification"]
                 ws.append(values)
                 if key == "interfaces":
                     fill = PatternFill("solid", fgColor=COLORS[row["Row color"]])
@@ -662,7 +660,7 @@ def write_workbook(path: Path, reports: list[dict], args: argparse.Namespace) ->
                 if key == "interfaces" and columns[cell.column - 1] in {"ARP IP count", "Unique MAC count"}:
                     cell.number_format = "#,##0"
         for index, column in enumerate(columns, 1):
-            width = 45 if column in {"Collection errors", "System description", "Observed finding", "Classification", "Command"} else 28 if column in {"Neighbor name", "Advertised platform", "Timestamp UTC"} else 23
+            width = 45 if column in {"Collection errors", "System description", "Observed finding", "Neighbor", "Command"} else 28 if column in {"Neighbor name", "Advertised platform", "Timestamp UTC"} else 23
             ws.column_dimensions[get_column_letter(index)].width = width
         ws.row_dimensions[header_row].height = 34
         for row in range(header_row + 1, ws.max_row + 1):

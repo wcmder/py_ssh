@@ -150,7 +150,7 @@ Two MACs on `Gi0/0/1.20` cross the threshold on that interface; one MAC on
 Subinterfaces retain separate counts even when their physical parent is shared.
 
 Neighbors are matched to the logical interface first, then its physical parent.
-The match scope is recorded. No physical parent is invented for SVIs, BDI,
+No physical parent is invented for SVIs, BDI,
 loopbacks, tunnels or port channels. Every discovered selected interface is
 exported, including down interfaces and those without ARP/neighbor entries.
 
@@ -188,10 +188,11 @@ Excel uses a single VRF column; the VPN selection is not repeated as a separate 
 The Interfaces sheet opens with a color legend above the
 table. The table header is on row 8; filters apply only to the table, and frozen
 panes keep the legend, header and identifying columns visible while scrolling.
-On Interfaces, F is Classification, G is Observed finding, H is ARP IP count,
-and I is Unique MAC count. For an Our domain classification, F displays the
-matching advertised hostname(s) instead of the words Our domain; the row remains
-green. Other classifications and collection failures retain their descriptive labels.
+On Interfaces, F is Neighbor, G is Observed finding, H is ARP IP count,
+and I is Unique MAC count. Neighbor displays all known advertised CDP/LLDP names,
+regardless of domain or row color, with duplicate names removed. If no name is
+available, it displays Unknown. Observed finding and row colors retain the
+classification result and collection limitations.
 The workbook contains Interfaces, ARP Details, Neighbors, Collection, Command
 Manifest and Readme. Interfaces has one row per selected interface with full-row
 colors; ARP Details includes exclusions and their reasons; Neighbors preserves
