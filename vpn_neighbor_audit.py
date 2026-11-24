@@ -58,6 +58,15 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def print_error(message: str, *, file: Any = None) -> None:
+    stream = file if file is not None else sys.stdout
+    text = f"[error] {message}"
+    if stream.isatty():
+        text = f"\033[31m{text}\033[0m"
+    with ssh.print_lock:
+        print(text, file=stream, flush=True)
+
+
 @contextmanager
 def ssh_diagnostics(path: Path):
     """Keep Paramiko's background-thread tracebacks out of the console."""
@@ -801,8 +810,7 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
             except Exception as exc:
                 part["error"] = str(exc)
                 console_error = "VRF not found or unverified" if isinstance(vrf, str) and vrf not in known else "VRF collection failed"
-                with ssh.print_lock:
-                    print(f"[error] {host} | VRF {vrf}: {console_error}", flush=True)
+                print_error(f"{host} | VRF {vrf}: {console_error}")
             for key in ("interfaces", "arp", "neighbors"):
                 report[key].extend(part[key])
             errors = part["error"] or "\n".join(dict.fromkeys(e for row in part["interfaces"] for e in row["Collection errors"].splitlines()))
@@ -823,9 +831,8 @@ def audit_device(device: dict, args: argparse.Namespace) -> dict:
             console_error = "Enable authentication failed"
         else:
             console_error = "Collection failed"
-        with ssh.print_lock:
-            target = Path(saved_file).name if saved_file else f"{host} | {device['connect_host']}"
-            print(f"[error] {target}: {console_error}", flush=True)
+        target = Path(saved_file).name if saved_file else f"{host} | {device['connect_host']}"
+        print_error(f"{target}: {console_error}")
     finally:
         if conn:
             try:
@@ -1056,7 +1063,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[summary] {label}: {len(reports)}; incomplete: {failed}; workbook: {display_path}")
         return 1 if failed else 0
     except (ValueError, OSError, ImportError, EOFError) as exc:
-        print(f"[error] {exc}", file=sys.stderr)
+        print_error(str(exc), file=sys.stderr)
         return 2
 
 
